@@ -38,6 +38,11 @@ class NTKEvaluator:
             
     def compute_ntk_score(self, network: nn.Module, param_count: int = None) -> float:
         try:
+            # 安全检查：如果参数量过大，直接跳过NTK计算，防止OOM
+            if param_count and param_count > config.NTK_PARAM_THRESHOLD: # 使用配置中的阈值
+                logger.warning(f"Skipping NTK computation: params {param_count} > threshold {config.NTK_PARAM_THRESHOLD}")
+                return 0.0 # 或者返回一个极低的分数
+
             if param_count and param_count > config.FORCE_CPU_EVAL_THRESHOLD * 1000000:
                 return self._compute_simplified_score(network)
             
@@ -287,7 +292,15 @@ class FinalEvaluator:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         save_path = os.path.join(save_dir, f'model_{individual.id}_acc{best_acc:.2f}.pth')
-        torch.save(network.state_dict(), save_path)
+        
+        save_dict = {
+            'state_dict': network.state_dict(),
+            'encoding': individual.encoding,
+            'accuracy': best_acc,
+            'param_count': param_count,
+            'history': history
+        }
+        torch.save(save_dict, save_path)
         logger.info(f"Saved model to {save_path}")
         
         result = {
@@ -358,6 +371,10 @@ class FitnessEvaluator:
             if quick_eval and ind.quick_score is None:
                 print(f"\r[Quick Eval] {idx+1}/{total}", end="", flush=True)
                 self.quick_evaluator.evaluate_individual(ind)
+            
+            # Update fitness to be quick_score for statistics and best tracking in Phase 2
+            if quick_eval and ind.quick_score is not None:
+                ind.fitness = ind.quick_score
         if quick_eval: print()
 
 fitness_evaluator = FitnessEvaluator()

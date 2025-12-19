@@ -11,7 +11,7 @@ from utils.config import config
 from search.evolution import EvolutionaryNAS
 from core.encoding import Encoder
 from model.network import NetworkBuilder
-from utils.logger import logger
+from utils.logger import logger, tb_logger
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -56,6 +56,10 @@ def test_network_building():
             Encoder.print_architecture(encoding)
 
 def main():
+    # Setup logging
+    logger.setup_file_logging()
+    tb_logger.setup()
+
     args = parse_args()
     set_seed(args.seed)
     

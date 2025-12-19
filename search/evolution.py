@@ -174,6 +174,21 @@ class EvolutionaryNAS:
         
         if best_fitness > 0:
             adaptive_mutation_controller.update(self.current_gen, best_fitness, self.get_current_phase())
+            
+        # Count and log unit statistics
+        unit_counts = {}
+        for ind in self.population:
+            # Assuming Encoder.decode returns (unit_num, block_nums, block_params)
+            # We can access unit_num directly from the encoding if it's the first element
+            # based on Encoder.create_random_encoding
+            try:
+                if ind.encoding:
+                    unit_num = ind.encoding[0]
+                    unit_counts[unit_num] = unit_counts.get(unit_num, 0) + 1
+            except Exception:
+                pass
+        
+        logger.log_unit_stats(self.current_gen, unit_counts)
 
     def evolve_one_generation(self):
         self.current_gen += 1

@@ -13,9 +13,9 @@ class Config:
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE = 50          # 种群大小
     MAX_GEN = 100               # 最大进化代数
-    G1 = 30                       # 第一阶段结束代数
-    G2 = 40                         # 第二阶段结束代数
-    TOURNAMENT_SIZE = 5             # 锦标赛选择的个体数量
+    G1 = 30                  # 第一阶段结束代数
+    G2 = 50                         # 第二阶段结束代数
+    TOURNAMENT_SIZE = 3             # 锦标赛选择的个体数量
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量
     
     # ==================== 交叉算子参数 ====================
@@ -27,10 +27,10 @@ class Config:
     MIN_UNIT_NUM = 2                # 最小unit数量
     MAX_UNIT_NUM = 5               # 最大unit数量
     
-    MIN_BLOCK_NUM = 1               # 每个unit最小block数量
+    MIN_BLOCK_NUM = 2               # 每个unit最小block数量
     MAX_BLOCK_NUM = 5               # 每个unit最大block数量
     
-    CHANNEL_OPTIONS = [16, 32, 64, 128, 256, 512]
+    CHANNEL_OPTIONS = [16, 32, 64, 128, 256] # Removed 512 to prevent OOM
     GROUP_OPTIONS = [1, 2, 4, 8, 16, 32]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
@@ -54,8 +54,8 @@ class Config:
     # ==================== 自适应变异参数 ====================
     ADAPTIVE_MUTATION = True        
     MUTATION_SCALE_PHASE1 = 1.0     
-    MUTATION_SCALE_PHASE2 = 0.8     
-    MUTATION_SCALE_PHASE3 = 0.6     
+    MUTATION_SCALE_PHASE2 = 0.9     
+    MUTATION_SCALE_PHASE3 = 0.8     
     STAGNATION_THRESHOLD = 5        
     STAGNATION_MUTATION_BOOST = 1.5 
     
@@ -66,12 +66,12 @@ class Config:
     FORCE_CPU_EVAL_THRESHOLD = 100  
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 10000000  
+    NTK_PARAM_THRESHOLD = 44500000  # resnet101
     
     # ==================== 阶段2快速评估参数 ====================
-    PHASE2_QUICK_EVAL_SAMPLES = 1024   
-    PHASE2_QUICK_EVAL_EPOCHS = 3      
-    PHASE2_QUICK_EVAL_BATCH_SIZE = 32 
+    PHASE2_QUICK_EVAL_SAMPLES = 2048   # 建议增加到2048，约为CIFAR-10的4%
+    PHASE2_QUICK_EVAL_EPOCHS = 10       # 建议增加到5轮，以更好地区分模型性能
+    PHASE2_QUICK_EVAL_BATCH_SIZE = 64  # 建议增加到64，提高GPU利用率 
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
@@ -81,8 +81,8 @@ class Config:
     WEIGHT_DECAY = 5e-4             
     
     # ==================== 最终评估参数 ====================
-    FINAL_TOP_K = 1                 
-    FINAL_TRAIN_EPOCHS = 200         
+    FINAL_TOP_K = 3             
+    FINAL_TRAIN_EPOCHS = 250       
     FINAL_DATASET = 'cifar10'       
     
     # ==================== SENet参数 ====================

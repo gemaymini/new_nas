@@ -16,21 +16,7 @@ class Logger:
     def __init__(self):
         self.logger = logging.getLogger('NAS')
         self.logger.setLevel(getattr(logging, config.LOG_LEVEL))
-        
-        # 确保日志目录存在
-        if not os.path.exists(config.LOG_DIR):
-            os.makedirs(config.LOG_DIR)
-            
-        # 文件处理器
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        file_handler = logging.FileHandler(
-            os.path.join(config.LOG_DIR, f'nas_{timestamp}.log'),
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        ))
-        self.logger.addHandler(file_handler)
+        self.file_handler = None
         
         # 控制台处理器
         console_handler = logging.StreamHandler(sys.stdout)
@@ -38,6 +24,28 @@ class Logger:
             '%(message)s'
         ))
         self.logger.addHandler(console_handler)
+        
+    def setup_file_logging(self):
+        """
+        初始化文件日志记录
+        """
+        if self.file_handler is not None:
+            return
+            
+        # 确保日志目录存在
+        if not os.path.exists(config.LOG_DIR):
+            os.makedirs(config.LOG_DIR)
+            
+        # 文件处理器
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self.file_handler = logging.FileHandler(
+            os.path.join(config.LOG_DIR, f'nas_{timestamp}.log'),
+            encoding='utf-8'
+        )
+        self.file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        ))
+        self.logger.addHandler(self.file_handler)
         
     def info(self, msg):
         self.logger.info(msg)
@@ -60,6 +68,12 @@ class Logger:
     def log_generation(self, gen, best_fitness, avg_fitness, pop_size):
         """记录每代统计信息"""
         self.info(f"Gen {gen}: Best Fitness={best_fitness:.6f}, Avg Fitness={avg_fitness:.6f}, Pop Size={pop_size}")
+
+    def log_unit_stats(self, gen, unit_counts):
+        """记录每代Unit数量统计"""
+        msg = f"Gen {gen} Unit Stats: "
+        stats_str = ", ".join([f"{k} units: {v}" for k, v in sorted(unit_counts.items())])
+        self.info(msg + stats_str)
         
     def log_phase_change(self, gen, phase):
         """记录阶段切换"""
@@ -78,7 +92,9 @@ class Logger:
 class TBLogger:
     def __init__(self):
         self.writer = None
-        if config.USE_TENSORBOARD:
+        
+    def setup(self):
+        if config.USE_TENSORBOARD and self.writer is None:
             try:
                 from torch.utils.tensorboard import SummaryWriter
                 if not os.path.exists(config.TENSORBOARD_DIR):
