@@ -1,0 +1,76 @@
+# -*- coding: utf-8 -*-
+"""
+数据集加载模块
+负责数据集的下载、预处理和加载
+"""
+import torch
+from torch.utils.data import DataLoader
+import torchvision
+import torchvision.transforms as transforms
+from new_nas.utils.config import config
+
+class DatasetLoader:
+    """
+    数据集加载器
+    """
+    @staticmethod
+    def get_cifar10(batch_size: int = None, num_workers: int = None):
+        if batch_size is None: batch_size = config.BATCH_SIZE
+        if num_workers is None: num_workers = config.NUM_WORKERS
+        
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), 
+                               (0.2023, 0.1994, 0.2010)),
+        ])
+        
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), 
+                               (0.2023, 0.1994, 0.2010)),
+        ])
+        
+        trainset = torchvision.datasets.CIFAR10(
+            root='./data', train=True, download=True, transform=transform_train)
+        trainloader = DataLoader(
+            trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        
+        testset = torchvision.datasets.CIFAR10(
+            root='./data', train=False, download=True, transform=transform_test)
+        testloader = DataLoader(
+            testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        
+        return trainloader, testloader
+
+    @staticmethod
+    def get_cifar100(batch_size: int = None, num_workers: int = None):
+        if batch_size is None: batch_size = config.BATCH_SIZE
+        if num_workers is None: num_workers = config.NUM_WORKERS
+        
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), 
+                               (0.2675, 0.2565, 0.2761)),
+        ])
+        
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), 
+                               (0.2675, 0.2565, 0.2761)),
+        ])
+        
+        trainset = torchvision.datasets.CIFAR100(
+            root='./data', train=True, download=True, transform=transform_train)
+        trainloader = DataLoader(
+            trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        
+        testset = torchvision.datasets.CIFAR100(
+            root='./data', train=False, download=True, transform=transform_test)
+        testloader = DataLoader(
+            testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        
+        return trainloader, testloader
