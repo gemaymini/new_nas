@@ -11,12 +11,12 @@ import gc
 import time
 import os
 from typing import Tuple, List
-from new_nas.utils.config import config
-from new_nas.core.encoding import Individual, Encoder
-from new_nas.model.network import NetworkBuilder
-from new_nas.utils.logger import logger, failed_logger
-from new_nas.data.dataset import DatasetLoader
-from new_nas.engine.trainer import NetworkTrainer
+from utils.config import config
+from core.encoding import Individual, Encoder
+from model.network import NetworkBuilder
+from utils.logger import logger, failed_logger
+from data.dataset import DatasetLoader
+from engine.trainer import NetworkTrainer
 
 def clear_gpu_memory():
     if torch.cuda.is_available():

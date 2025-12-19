@@ -6,10 +6,10 @@
 import random
 import copy
 from typing import List, Tuple
-from new_nas.utils.config import config
-from new_nas.core.encoding import Encoder, Individual
-from new_nas.core.search_space import search_space
-from new_nas.utils.logger import logger
+from utils.config import config
+from core.encoding import Encoder, Individual
+from core.search_space import search_space
+from utils.logger import logger
 
 class AdaptiveMutationController:
     def __init__(self):

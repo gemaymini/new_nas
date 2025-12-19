@@ -7,11 +7,11 @@ import torch
 import sys
 import random
 import numpy as np
-from new_nas.utils.config import config
-from new_nas.search.evolution import EvolutionaryNAS
-from new_nas.core.encoding import Encoder
-from new_nas.model.network import NetworkBuilder
-from new_nas.utils.logger import logger
+from utils.config import config
+from search.evolution import EvolutionaryNAS
+from core.encoding import Encoder
+from model.network import NetworkBuilder
+from utils.logger import logger
 
 def set_seed(seed: int):
     random.seed(seed)

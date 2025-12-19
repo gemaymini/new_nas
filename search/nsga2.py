@@ -4,8 +4,8 @@ NSGA-II多目标优化模块
 """
 import math
 from typing import List
-from new_nas.core.encoding import Individual
-from new_nas.utils.logger import logger
+from core.encoding import Individual
+from utils.logger import logger
 
 class NSGAII:
     """

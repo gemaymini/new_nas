@@ -8,13 +8,13 @@ import os
 import pickle
 import time
 from typing import List, Tuple, Optional
-from new_nas.utils.config import config
-from new_nas.core.encoding import Encoder, Individual
-from new_nas.core.search_space import population_initializer
-from new_nas.search.mutation import mutation_operator, selection_operator, crossover_operator, adaptive_mutation_controller
-from new_nas.engine.evaluator import fitness_evaluator, FinalEvaluator
-from new_nas.search.nsga2 import NSGAII
-from new_nas.utils.logger import logger, tb_logger, failed_logger
+from utils.config import config
+from core.encoding import Encoder, Individual
+from core.search_space import population_initializer
+from search.mutation import mutation_operator, selection_operator, crossover_operator, adaptive_mutation_controller
+from engine.evaluator import fitness_evaluator, FinalEvaluator
+from search.nsga2 import NSGAII
+from utils.logger import logger, tb_logger, failed_logger
 
 class EvolutionaryNAS:
     def __init__(self, population_size: int = None, max_gen: int = None,

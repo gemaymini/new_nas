@@ -6,9 +6,9 @@
 import torch
 import torch.nn as nn
 from typing import List
-from new_nas.utils.config import config
-from new_nas.core.encoding import Encoder, BlockParams
-from new_nas.utils.logger import logger
+from utils.config import config
+from core.encoding import Encoder, BlockParams
+from utils.logger import logger
 
 class SEBlock(nn.Module):
     def __init__(self, channels: int, reduction: int = 16):

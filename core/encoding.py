@@ -6,7 +6,7 @@
 import random
 import copy
 from typing import List, Tuple, Optional
-from new_nas.utils.config import config
+from utils.config import config
 
 class BlockParams:
     """

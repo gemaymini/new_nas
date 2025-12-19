@@ -5,9 +5,9 @@
 """
 import random
 from typing import List, Optional
-from new_nas.utils.config import config
-from new_nas.core.encoding import Encoder, Individual, BlockParams
-from new_nas.utils.logger import logger
+from utils.config import config
+from core.encoding import Encoder, Individual, BlockParams
+from utils.logger import logger
 
 class SearchSpace:
     """

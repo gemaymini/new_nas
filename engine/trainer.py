@@ -9,8 +9,8 @@ import torch.optim as optim
 import copy
 from torch.utils.data import DataLoader
 from typing import Tuple, List
-from new_nas.utils.config import config
-from new_nas.utils.logger import logger
+from utils.config import config
+from utils.logger import logger
 
 class NetworkTrainer:
     """
