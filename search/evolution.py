@@ -131,7 +131,7 @@ class EvolutionaryNAS:
     def _select_survivors(self, combined_population: List[Individual]) -> List[Individual]:
         phase = self.get_current_phase()
         if phase == 2:
-            survivors = fitness_evaluator.select_survivors_nsga2(combined_population, self.population_size)
+            survivors = NSGAII.select_by_nsga2(combined_population, self.population_size)
             pareto_front = NSGAII.get_pareto_front(combined_population)
             self.pareto_history.append({
                 'generation': self.current_gen,
