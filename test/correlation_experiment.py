@@ -5,6 +5,7 @@ Includes comprehensive logging, hardware monitoring, and visualization.
 """
 import sys
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import random
 import numpy as np
 import matplotlib.pyplot as plt
@@ -173,8 +174,8 @@ class Visualizer:
         for m in models:
             history = m["history"]
             epochs = [h['epoch'] for h in history]
-            val_acc = [h['val_acc'] for h in history]
-            plt.plot(epochs, val_acc, alpha=0.5, label=f"Model {m['model_id']}")
+            test_acc = [h['test_acc'] for h in history]
+            plt.plot(epochs, test_acc, alpha=0.5, label=f"Model {m['model_id']}")
             
         plt.title('Validation Accuracy Curves')
         plt.xlabel('Epoch')
@@ -280,12 +281,12 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
             
             for record in history:
                 if record['epoch'] == short_epochs:
-                    acc_short = record['val_acc']
+                    acc_short = record['test_acc']
                 if record['epoch'] == full_epochs:
-                    acc_full = record['val_acc']
+                    acc_full = record['test_acc']
             
             if acc_full == 0.0 and history:
-                acc_full = history[-1]['val_acc']
+                acc_full = history[-1]['test_acc']
                 
             print(f"Model {i}: Short({short_epochs})={acc_short:.2f}%, Full({full_epochs})={acc_full:.2f}%")
             
@@ -316,4 +317,4 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
 
 if __name__ == "__main__":
     # You can adjust these numbers for the real run
-    run_correlation_experiment(num_models=100, full_epochs=150, short_epochs=20)
+    run_correlation_experiment(num_models=50, full_epochs=100, short_epochs=20)

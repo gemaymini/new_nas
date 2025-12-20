@@ -32,3 +32,5 @@ data/*
 # OS specific
 .DS_Store
 Thumbs.db
+
+/test/experiment_results

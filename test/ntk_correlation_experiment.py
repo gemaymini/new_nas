@@ -5,6 +5,7 @@ Includes comprehensive logging, hardware monitoring, and visualization.
 """
 import sys
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import random
 import numpy as np
 import matplotlib.pyplot as plt
@@ -265,12 +266,7 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             ntk_evaluator.evaluate_individual(ind)
             ntk_score = ind.fitness # This is 1/Cond (or similar score where higher is better)
             
-            # Reverse engineer Cond from Score (approx)
-            # score = 1.0 / (cond + 1e-8)  => cond = (1/score) - 1e-8
-            if ntk_score and ntk_score > 0:
-                ntk_cond = (1.0 / ntk_score) - 1e-8
-            else:
-                ntk_cond = 1e6 # Very bad
+            ntk_cond=-ntk_score
                 
             print(f"Model {i}: NTK Score={ntk_score:.6f}, Cond={ntk_cond:.2f}")
             
@@ -288,7 +284,7 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             # Extract Acc
             short_acc = 0.0
             if history:
-                short_acc = history[-1]['val_acc'] # Last epoch accuracy
+                short_acc = history[-1]['test_acc'] # Last epoch accuracy
                 
             print(f"Model {i}: Short Acc={short_acc:.2f}%")
             
@@ -318,4 +314,4 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             print(f"Visualization failed: {e}")
 
 if __name__ == "__main__":
-    run_ntk_experiment(num_models=100, short_epochs=20)
+    run_ntk_experiment(num_models=2, short_epochs=2)
