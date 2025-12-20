@@ -1,6 +1,12 @@
+# -*- coding: utf-8 -*-
+"""
+评估器模块
+包含NTK评估、参数评估、快速评估和最终评估
+"""
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 import gc
 import time
 import os
@@ -12,162 +18,127 @@ from utils.logger import logger, failed_logger
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer
 
-
 def clear_gpu_memory():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         gc.collect()
 
-
 class NTKEvaluator:
-    def __init__(self,
-                 input_size: Tuple[int, int, int] = None,
-                 num_classes: int = None,
-                 batch_size: int = None,
-                 device: str = None,
-                 recalbn: int = 0,
-                 num_batch: int = 1):
+    def __init__(self, input_size: Tuple[int, int, int] = None,
+                 num_classes: int = None, batch_size: int = None,
+                 device: str = None):
         self.input_size = input_size or config.NTK_INPUT_SIZE
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
         self.device = device or config.DEVICE
         self.param_threshold = config.NTK_PARAM_THRESHOLD
-
-        self.recalbn = recalbn        # 重置并重新统计 BN 的 batch 数
-        self.num_batch = num_batch    # 使用多少个 batch 计算 NTK
-
+        
         if self.device == 'cuda' and not torch.cuda.is_available():
             self.device = 'cpu'
-
-        # 加载用于 NTK 计算的小数据集 loader
-        self.trainloader = DatasetLoader.get_ntk_trainloader(
-            batch_size=self.batch_size
-        )
-
-    def recal_bn(self, network: nn.Module, xloader, recal_batches: int, device):
-        """重置 BN 统计并用若干 batch 重新统计（与 ntk.py 中一致）"""
-        for m in network.modules():
-            if isinstance(m, torch.nn.BatchNorm2d):
-                m.running_mean.data.fill_(0)
-                m.running_var.data.fill_(0)
-                m.num_batches_tracked.data.zero_()
-                m.momentum = None  # 使用 None 表示使用 batch mean/var
-
-        network.train()
-        with torch.no_grad():
-            for i, (inputs, _) in enumerate(xloader):
-                if i >= recal_batches:
-                    break
-                inputs = inputs.to(device=device, non_blocking=True)
-                _ = network(inputs)
-        return network
-
-    def compute_ntk_condition_number(self, network: nn.Module, xloader, num_batch: int = -1) -> float:
-        """严格按照 ntk.py 中的 get_ntk_n 逻辑计算单个网络的 NTK 条件数"""
-        device = self.device if self.device == 'cpu' else 0
-
-        network.eval()  # 默认 eval 模式，与原始实现一致
-        grads = []
-
-        for i, (inputs, _) in enumerate(xloader):
-            if num_batch > 0 and i >= num_batch:
-                break
-            inputs = inputs.to(device=device, non_blocking=True)
-
-            network.zero_grad()
-            logit = network(inputs)
-            if isinstance(logit, tuple):
-                logit = logit[1]  # 支持返回 (features, logits) 的网络
-
-            for idx in range(inputs.size(0)):
-                network.zero_grad()
-                logit[idx:idx + 1].backward(torch.ones_like(logit[idx:idx + 1]), retain_graph=True)
-
-                grad = []
-                for name, p in network.named_parameters():
-                    if 'weight' in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach().clone())
-
-                if grad:
-                    grads.append(torch.cat(grad))
-
-                torch.cuda.empty_cache()
-
-        if len(grads) == 0:
-            return 100000.0  # 无效网络，惩罚大条件数
-
-        grads_tensor = torch.stack(grads)  # (N, C)
-        ntk = torch.einsum('nc,mc->nm', grads_tensor, grads_tensor)  # (N, N)
-
-        try:
-            eigenvalues = torch.linalg.eigh(ntk)[0]  # 升序
-        except Exception:
-            eigenvalues = torch.symeig(ntk, eigenvectors=False)
-
-        cond = (eigenvalues[-1] / eigenvalues[0]).item()
-        cond = np.nan_to_num(cond, nan=100000.0, posinf=100000.0, neginf=100000.0)
-
-        # 清理显存
-        del grads, grads_tensor, ntk, eigenvalues, logit
-        clear_gpu_memory()
-
-        return cond
-
+            
     def compute_ntk_score(self, network: nn.Module, param_count: int = None) -> float:
         try:
-            if param_count and param_count > self.param_threshold:
-                logger.warning(f"Skipping NTK: params {param_count} > threshold {self.param_threshold}")
-                return 100000.0  # 大模型惩罚大条件数（差）
+            # 安全检查：如果参数量过大，直接跳过NTK计算，防止OOM
+            if param_count and param_count > self.param_threshold: # 使用配置中的阈值
+                logger.warning(f"Skipping NTK computation: params {param_count} > threshold {self.param_threshold}")
+                return 0.0 # 或者返回一个极低的分数
 
             network = network.to(self.device)
-
-            if self.recalbn > 0:
-                network = self.recal_bn(network, self.trainloader, self.recalbn, self.device)
-
-            cond = self.compute_ntk_condition_number(network, self.trainloader, num_batch=self.num_batch)
-
-            return cond
-
+            network.eval()
+            
+            x = torch.randn(self.batch_size, *self.input_size).to(self.device)
+            
+            with torch.no_grad():
+                _ = network(x)
+                
+            return self.compute_ntk_condition_number(network, x)
         except Exception as e:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
-            return 100000.0  # 出错也给差分
+            return 0.0
+        finally:
+            clear_gpu_memory()
+
+    def compute_ntk_condition_number(self, network: nn.Module, x: torch.Tensor) -> float:
+        """
+        计算严格的NTK条件数 (基于用户提供的算法)
+        注意：计算量和显存消耗较大
+        """
+        try:
+            device = 0 
+            if self.device == 'cpu': device = 'cpu'
+            network.eval() 
+            inputs = x
+            grads = []
+            network.zero_grad()
+            logit = network(inputs)
+            if isinstance(logit, tuple):
+                logit = logit[1]
+                
+            for _idx in range(len(inputs)):
+                target = logit[_idx:_idx+1]
+                target.backward(torch.ones_like(target), retain_graph=True)
+                
+                grad = []
+                for name, W in network.named_parameters():
+                    if 'weight' in name and W.grad is not None:
+                        grad.append(W.grad.view(-1).detach())
+                
+                if grad:
+                    grads.append(torch.cat(grad, -1))
+                
+                network.zero_grad()
+                torch.cuda.empty_cache()
+            
+            if not grads:
+                return 0.0
+                
+            grads_tensor = torch.stack(grads, 0)
+            
+            ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])
+            
+            try:
+                eigenvalues, _ = torch.linalg.eigh(ntk)
+            except AttributeError:
+                eigenvalues, _ = torch.symeig(ntk, eigenvectors=True) # Fallback for older torch
+                
+            cond = np.nan_to_num((eigenvalues[-1] / eigenvalues[0]).item(), copy=True, nan=100000.0)
+
+            # 简单倒数
+            score =-cond
+            # 清理计算图
+            del logit, grads_tensor, ntk, eigenvalues
+            
+            return max(0.0, min(1.0, score))
+
+        except Exception as e:
+            logger.warning(f"Strict NTK calculation failed: {e}, falling back to efficient method.")
+            return 0.0
 
     def evaluate_individual(self, individual: Individual) -> float:
         try:
             network = NetworkBuilder.build_from_individual(
-                individual,
-                input_channels=self.input_size[0],
-                num_classes=self.num_classes
+                individual, input_channels=self.input_size[0], num_classes=self.num_classes
             )
             param_count = network.get_param_count()
             individual.param_count = param_count
-
             score = self.compute_ntk_score(network, param_count)
-
-            # 注意：条件数越小越好，所以 fitness 取负值（进化算法通常越大越好）
-            fitness = -score
-            individual.fitness = fitness
-
+            individual.fitness = score
             del network
             clear_gpu_memory()
-
-            logger.log_evaluation(individual.id, "NTK", fitness)
-            return fitness
-
+            logger.log_evaluation(individual.id, "NTK", score)
+            return score
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
-            individual.fitness = -100000.0
+            individual.fitness = 0.0
             clear_gpu_memory()
-            return -100000.0
+            return 0.0
 
-
-# 其余评估器保持不变（仅小修）
 class ParameterEvaluator:
     def __init__(self, input_channels: int = 3, num_classes: int = 10):
         self.input_channels = input_channels
         self.num_classes = num_classes
-
+    
     def count_parameters(self, individual: Individual) -> int:
         try:
             if individual.param_count is not None and individual.param_count > 0:
@@ -178,12 +149,10 @@ class ParameterEvaluator:
             param_count = network.get_param_count()
             individual.param_count = param_count
             del network
-            clear_gpu_memory()
             return param_count
         except Exception:
             individual.param_count = float('inf')
             return float('inf')
-
 
 class QuickEvaluator:
     def __init__(self):
@@ -195,14 +164,13 @@ class QuickEvaluator:
         self.num_classes = config.NTK_NUM_CLASSES
         self._train_data = None
         self._val_data = None
-
+        
     def _load_small_dataset(self):
-        if self._train_data is not None:
-            return
-
+        if self._train_data is not None: return
+        
         import torchvision
         import torchvision.transforms as transforms
-
+        
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
@@ -213,13 +181,13 @@ class QuickEvaluator:
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
-
+        
         full_train = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
         full_val = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_val)
-
+        
         train_indices = torch.randperm(len(full_train))[:self.num_samples].tolist()
         val_indices = torch.randperm(len(full_val))[:self.num_samples // 4].tolist()
-
+        
         self._train_data = torch.utils.data.Subset(full_train, train_indices)
         self._val_data = torch.utils.data.Subset(full_val, val_indices)
 
@@ -231,18 +199,18 @@ class QuickEvaluator:
             )
             if individual.param_count is None:
                 individual.param_count = network.get_param_count()
-
+            
             if individual.param_count > config.FORCE_CPU_EVAL_THRESHOLD * 1000000:
                 individual.quick_score = 0.0
                 return 0.0
-
+                
             network = network.to(self.device)
             train_loader = torch.utils.data.DataLoader(self._train_data, batch_size=self.batch_size, shuffle=True)
             val_loader = torch.utils.data.DataLoader(self._val_data, batch_size=self.batch_size, shuffle=False)
-
+            
             optimizer = torch.optim.SGD(network.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
             criterion = nn.CrossEntropyLoss()
-
+            
             network.train()
             for _ in range(self.num_epochs):
                 for inputs, targets in train_loader:
@@ -252,7 +220,7 @@ class QuickEvaluator:
                     loss = criterion(outputs, targets)
                     loss.backward()
                     optimizer.step()
-
+                    
             network.eval()
             correct = 0
             total = 0
@@ -263,7 +231,7 @@ class QuickEvaluator:
                     _, predicted = outputs.max(1)
                     total += targets.size(0)
                     correct += predicted.eq(targets).sum().item()
-
+            
             accuracy = correct / total if total > 0 else 0.0
             individual.quick_score = accuracy
             del network, optimizer
@@ -275,13 +243,12 @@ class QuickEvaluator:
             clear_gpu_memory()
             return 0.0
 
-
 class FinalEvaluator:
     def __init__(self, dataset: str = 'cifar10', device: str = None):
         self.dataset = dataset
         self.device = device or config.DEVICE
         self.trainer = NetworkTrainer(self.device)
-
+        
         if dataset == 'cifar10':
             self.trainloader, self.testloader = DatasetLoader.get_cifar10()
             self.num_classes = 10
@@ -290,28 +257,29 @@ class FinalEvaluator:
             self.num_classes = 100
         else:
             raise ValueError(f"Unknown dataset: {dataset}")
-
+            
     def evaluate_individual(self, individual: Individual, epochs: int = None) -> Tuple[float, dict]:
-        if epochs is None:
-            epochs = config.FINAL_TRAIN_EPOCHS
-
+        if epochs is None: epochs = config.FINAL_TRAIN_EPOCHS
+        
         logger.info(f"Training individual {individual.id} for {epochs} epochs...")
         network = NetworkBuilder.build_from_individual(
             individual, input_channels=3, num_classes=self.num_classes
         )
         param_count = network.get_param_count()
         Encoder.print_architecture(individual.encoding)
-
+        
         start_time = time.time()
         best_acc, history = self.trainer.train_network(
             network, self.trainloader, self.testloader, epochs
         )
         train_time = time.time() - start_time
-
+        
+        # Save trained model
         save_dir = os.path.join(config.CHECKPOINT_DIR, 'final_models')
-        os.makedirs(save_dir, exist_ok=True)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
         save_path = os.path.join(save_dir, f'model_{individual.id}_acc{best_acc:.2f}.pth')
-
+        
         save_dict = {
             'state_dict': network.state_dict(),
             'encoding': individual.encoding,
@@ -321,7 +289,8 @@ class FinalEvaluator:
         }
         torch.save(save_dict, save_path)
         logger.info(f"Saved model to {save_path}")
-
+        logger.info(f"Model {individual.id} Architecture Encoding: {individual.encoding}")
+        
         result = {
             'individual_id': individual.id,
             'param_count': param_count,
@@ -333,74 +302,67 @@ class FinalEvaluator:
         }
         return best_acc, result
 
-    def evaluate_top_individuals(self, population: List[Individual],
+    def evaluate_top_individuals(self, population: List[Individual], 
                                 top_k: int = None, epochs: int = None) -> Tuple[Individual, List[dict]]:
-        if top_k is None:
-            top_k = config.FINAL_TOP_K
-        if epochs is None:
-            epochs = config.FINAL_TRAIN_EPOCHS
-
-        sorted_pop = sorted(population, key=lambda x: x.fitness or float('-inf'), reverse=True)
+        if top_k is None: top_k = config.FINAL_TOP_K
+        if epochs is None: epochs = config.FINAL_TRAIN_EPOCHS
+        
+        sorted_pop = sorted(population, key=lambda x: x.fitness if x.fitness else float('-inf'), reverse=True)
         top_individuals = sorted_pop[:top_k]
-
+        
         results = []
         best_individual = None
         best_accuracy = 0.0
-
+        
         for idx, individual in enumerate(top_individuals):
             print(f"\n[{idx + 1}/{top_k}] Evaluating Individual {individual.id}")
             acc, result = self.evaluate_individual(individual, epochs)
             results.append(result)
-
+            
             if acc > best_accuracy:
                 best_accuracy = acc
                 best_individual = individual
-
+        
         return best_individual, results
-
 
 class FitnessEvaluator:
     def __init__(self):
         self.ntk_evaluator = NTKEvaluator()
         self.param_evaluator = ParameterEvaluator()
         self.quick_evaluator = QuickEvaluator()
-
+        
     def evaluate_population_ntk(self, population: List[Individual], show_progress: bool = True):
         total = len(population)
         clear_gpu_memory()
-
+        
         for idx, ind in enumerate(population):
             if show_progress:
                 print(f"\r[NTK Eval] {idx+1}/{total}", end="", flush=True)
             self.ntk_evaluator.evaluate_individual(ind)
             if ind.param_count is None:
                 self.param_evaluator.count_parameters(ind)
-
+            
             if (idx + 1) % 5 == 0:
                 clear_gpu_memory()
-
-        if show_progress:
-            print()
+                
+        if show_progress: print()
         clear_gpu_memory()
 
     def evaluate_population_survival(self, population: List[Individual], 
                                    current_gen: int, quick_eval: bool = True):
         total = len(population)
-        for idx, ind in enumerate(population):
+        for idx, ind in enumerate[Individual](population):
             ind.survival_time = current_gen - ind.birth_generation
             if ind.param_count is None:
                 self.param_evaluator.count_parameters(ind)
-
+            
             if quick_eval and ind.quick_score is None:
                 print(f"\r[Quick Eval] {idx+1}/{total}", end="", flush=True)
                 self.quick_evaluator.evaluate_individual(ind)
-
+            
+            # Update fitness to be quick_score for statistics and best tracking in Phase 2
             if quick_eval and ind.quick_score is not None:
                 ind.fitness = ind.quick_score
+        if quick_eval: print()
 
-        if quick_eval:
-            print()
-
-
-# 全局实例
 fitness_evaluator = FitnessEvaluator()

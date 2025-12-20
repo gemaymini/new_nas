@@ -45,6 +45,36 @@ class DatasetLoader:
         return trainloader, testloader
 
     @staticmethod
+    def get_ntk_trainloader(batch_size: int = 16, num_workers: int = 0, dataset_name: str = 'cifar10'):
+        """
+        获取用于NTK计算的DataLoader
+        通常使用较小的batch_size，且不进行数据增强
+        """
+        if dataset_name == 'cifar10':
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), 
+                                   (0.2023, 0.1994, 0.2010)),
+            ])
+            dataset = torchvision.datasets.CIFAR10(
+                root='./data', train=True, download=True, transform=transform)
+        elif dataset_name == 'cifar100':
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4867, 0.4408), 
+                                   (0.2675, 0.2565, 0.2761)),
+            ])
+            dataset = torchvision.datasets.CIFAR100(
+                root='./data', train=True, download=True, transform=transform)
+        else:
+            raise ValueError(f"Unknown dataset: {dataset_name}")
+            
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True
+        )
+        return loader
+
+    @staticmethod
     def get_cifar100(batch_size: int = None, num_workers: int = None):
         if batch_size is None: batch_size = config.BATCH_SIZE
         if num_workers is None: num_workers = config.NUM_WORKERS

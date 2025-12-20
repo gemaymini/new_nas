@@ -12,10 +12,10 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE = 50          # 种群大小
-    MAX_GEN = 100               # 最大进化代数
+    MAX_GEN = 50               # 最大进化代数
     G1 = 30                  # 第一阶段结束代数
-    G2 = 50                         # 第二阶段结束代数
-    TOURNAMENT_SIZE = 3             # 锦标赛选择的个体数量
+    G2 = 40                         # 第二阶段结束代数
+    TOURNAMENT_SIZE = 5             # 锦标赛选择的个体数量
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量
     
     # ==================== 交叉算子参数 ====================
@@ -24,20 +24,20 @@ class Config:
     CROSSOVER_TYPE = 'unit'         # 交叉类型
     
     # ==================== 搜索空间参数 ====================
-    MIN_UNIT_NUM = 2                # 最小unit数量
+    MIN_UNIT_NUM = 3                # 最小unit数量
     MAX_UNIT_NUM = 5               # 最大unit数量
     
     MIN_BLOCK_NUM = 2               # 每个unit最小block数量
     MAX_BLOCK_NUM = 5               # 每个unit最大block数量
     
-    CHANNEL_OPTIONS = [16, 32, 64, 128, 256] # Removed 512 to prevent OOM
-    GROUP_OPTIONS = [1, 2, 4, 8, 16, 32]
+    CHANNEL_OPTIONS = [4, 8, 16, 32, 64] # Removed 512 to prevent OOM
+    GROUP_OPTIONS = [1, 2, 4, 8, 16, 32, 64]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
     
     # 初始卷积层参数
-    INIT_CONV_OUT_CHANNELS = 32     
+    INIT_CONV_OUT_CHANNELS = 64    
     INIT_CONV_KERNEL_SIZE = 3       
     INIT_CONV_STRIDE = 1            
     INIT_CONV_PADDING = 1           
@@ -59,10 +59,8 @@ class Config:
     STAGNATION_THRESHOLD = 5        
     STAGNATION_MUTATION_BOOST = 1.5 
     
-    # ==================== 内存优化参数 ====================
-    MAX_NETWORK_SIZE_MB = 50        
-    NTK_BATCH_SIZE = 4              
-    GPU_MEMORY_CHECK_INTERVAL = 10  
+    # ==================== NTK评估配置 ====================
+    NTK_BATCH_SIZE = 32              
     FORCE_CPU_EVAL_THRESHOLD = 100  
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
@@ -82,7 +80,7 @@ class Config:
     
     # ==================== 最终评估参数 ====================
     FINAL_TOP_K = 3             
-    FINAL_TRAIN_EPOCHS = 250       
+    FINAL_TRAIN_EPOCHS = 300       
     FINAL_DATASET = 'cifar10'       
     
     # ==================== SENet参数 ====================
