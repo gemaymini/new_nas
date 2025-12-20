@@ -8,10 +8,10 @@ import os
 import argparse
 
 # 添加项目根目录到路径
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
 from core.encoding import Individual, Encoder
-from model.network import NetworkBuilder
+from models.network import NetworkBuilder
 
 def inspect_model(model_path: str):
     """

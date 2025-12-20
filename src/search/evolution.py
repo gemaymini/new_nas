@@ -11,12 +11,12 @@ from collections import deque
 from typing import List, Tuple, Optional
 from copy import deepcopy
 
-from new_nas.utils.config import config
-from new_nas.core.encoding import Encoder, Individual
-from new_nas.core.search_space import population_initializer
-from new_nas.search.mutation import mutation_operator, selection_operator, crossover_operator
-from new_nas.engine.evaluator import fitness_evaluator, FinalEvaluator
-from new_nas.utils.logger import logger, tb_logger, failed_logger
+from configuration.config import config
+from core.encoding import Encoder, Individual
+from core.search_space import population_initializer
+from search.mutation import mutation_operator, selection_operator, crossover_operator
+from engine.evaluator import fitness_evaluator, FinalEvaluator
+from utils.logger import logger, tb_logger, failed_logger
 
 class AgingEvolutionNAS:
     def __init__(self):
@@ -29,7 +29,6 @@ class AgingEvolutionNAS:
         self.history: List[Individual] = []
         self.lock = threading.Lock()
         
-        self.current_step = 0
         self.start_time = time.time()
         
         self._log_search_space_info()
@@ -46,12 +45,9 @@ class AgingEvolutionNAS:
         
         while len(self.population) < self.population_size:
             ind = population_initializer.create_valid_individual()
-            if not ind: continue
-            
             # Evaluate immediately
+            ind.id=len(self.population)
             fitness_evaluator.evaluate_individual(ind)
-            ind.birth_generation = 0 # Initial population born at 0
-            
             self.population.append(ind)
             self.history.append(ind)
             
@@ -90,15 +86,14 @@ class AgingEvolutionNAS:
         # Crossover
         if random.random() < config.PROB_CROSSOVER:
             # Generate 2 children, pick random one
-            c1, c2 = crossover_operator.crossover(parent1, parent2, self.current_step)
+            c1, c2 = crossover_operator.crossover(parent1, parent2)
             child = random.choice([c1, c2])
         else:
             child = random.choice([parent1, parent2]).copy()
-            child.birth_generation = self.current_step
 
         # Mutation
         if random.random() < config.PROB_MUTATION:
-            child = mutation_operator.mutate(child, self.current_step)
+            child = mutation_operator.mutate(child)
             
         # Validate and Repair
         if not Encoder.validate_encoding(child.encoding):
@@ -107,8 +102,8 @@ class AgingEvolutionNAS:
         return child
 
     def _repair_individual(self, ind: Individual, parents: List[Individual]) -> Individual:
-        for _ in range(5):
-            ind = mutation_operator.mutate(random.choice(parents), self.current_step)
+        for _ in range(20):
+            ind = mutation_operator.mutate(random.choice(parents))
             if Encoder.validate_encoding(ind.encoding): return ind
         return random.choice(parents).copy()
 
@@ -120,14 +115,13 @@ class AgingEvolutionNAS:
         3. Evaluate child
         4. Atomic update: Push child, Pop oldest
         """
-        self.current_step += 1
         
         # 1. Select Parents
         parent1, parent2 = self._select_parents()
         
         # 2. Generate Offspring
         child = self._generate_offspring(parent1, parent2)
-        child.id = len(self.history) + 1 # Assign new ID based on total history
+        child.id = len(self.history)  # Assign new ID based on total history
         
         # 3. Evaluate (Calculate NTK)
         fitness_evaluator.evaluate_individual(child)
@@ -144,8 +138,8 @@ class AgingEvolutionNAS:
             self.history.append(child)
             
         # Logging
-        if self.current_step % 10 == 0:
-            logger.info(f"Step {self.current_step}/{self.max_gen}: Child Fitness={child.fitness:.4f}")
+        if len(self.history) % 10 == 0:
+            logger.info(f"Step {len(self.history)-len(self.population)}/{self.max_gen}: Child Fitness={child.fitness:.4f}")
             self._record_statistics()
 
     def run_search(self):
@@ -161,10 +155,10 @@ class AgingEvolutionNAS:
         # Or just run MAX_GEN steps? Usually MAX_GEN implies total evaluations.
         # Let's say we run until len(history) >= MAX_GEN
         
-        while len(self.history) < self.max_gen:
+        while len(self.history)-len(self.population) < self.max_gen:
             self.step()
             
-            if len(self.history) % 100 == 0:
+            if len(self.history) -len(self.population) % 100 == 0:
                 self.save_checkpoint()
 
         logger.info("Search completed.")
@@ -248,15 +242,15 @@ class AgingEvolutionNAS:
             avg_fitness = best_fitness = 0.0
             
         stats = {
-            'generation': self.current_step,
+            'generation': len(self.history)-len(self.population),
             'best_fitness': best_fitness,
             'avg_fitness': avg_fitness,
             'population_size': len(self.population)
         }
         
         # Use existing logger methods (might need adaptation)
-        logger.log_generation(self.current_step, best_fitness, avg_fitness, len(self.population))
-        tb_logger.log_generation_stats(self.current_step, stats)
+        logger.log_generation(len(self.history)-len(self.population), best_fitness, avg_fitness, len(self.population))
+        tb_logger.log_generation_stats(len(self.history)-len(self.population), stats)
         
         # Unit stats
         unit_counts = {}
@@ -264,15 +258,14 @@ class AgingEvolutionNAS:
             if ind.encoding:
                 unit_num = ind.encoding[0]
                 unit_counts[unit_num] = unit_counts.get(unit_num, 0) + 1
-        logger.log_unit_stats(self.current_step, unit_counts)
+        logger.log_unit_stats(len(self.history)-len(self.population), unit_counts)
 
     def save_checkpoint(self, filepath: str = None):
         if filepath is None:
             if not os.path.exists(config.CHECKPOINT_DIR): os.makedirs(config.CHECKPOINT_DIR)
-            filepath = os.path.join(config.CHECKPOINT_DIR, f'checkpoint_step{self.current_step}.pkl')
+            filepath = os.path.join(config.CHECKPOINT_DIR, f'checkpoint_step{len(self.history)-len(self.population)}.pkl')
         
         checkpoint = {
-            'current_step': self.current_step,
             'population': list(self.population), # Convert deque to list for pickling
             'history': self.history,
         }
@@ -283,16 +276,7 @@ class AgingEvolutionNAS:
     def load_checkpoint(self, filepath: str):
         with open(filepath, 'rb') as f:
             checkpoint = pickle.load(f)
-        self.current_step = checkpoint['current_step']
         self.population = deque(checkpoint['population'])
         self.history = checkpoint['history']
         logger.info(f"Checkpoint loaded from {filepath}")
 
-# Main execution helper
-def main():
-    nas = AgingEvolutionNAS()
-    nas.run_search()
-    nas.run_screening_and_training()
-
-if __name__ == "__main__":
-    main()

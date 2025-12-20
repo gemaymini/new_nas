@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
-from utils.config import config
+from configuration.config import config
 
 class DatasetLoader:
     """

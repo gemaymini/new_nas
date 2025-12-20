@@ -7,7 +7,7 @@ import os
 import logging
 import sys
 import time
-from .config import config
+from configuration.config import config
 
 class Logger:
     """

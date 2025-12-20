@@ -8,9 +8,9 @@ import os
 import sys
 
 # 添加项目根目录到路径
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
-from utils.config import config
+from configuration.config import config
 from engine.evaluator import FinalEvaluator
 from utils.logger import logger, tb_logger
 

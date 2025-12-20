@@ -5,7 +5,7 @@
 """
 import random
 from typing import List, Optional
-from utils.config import config
+from configuration.config import config
 from core.encoding import Encoder, Individual, BlockParams
 from utils.logger import logger
 
@@ -63,14 +63,13 @@ class PopulationInitializer:
     def __init__(self, search_space: SearchSpace):
         self.search_space = search_space
     
-    def create_valid_individual(self, max_attempts: int = 20) -> Optional[Individual]:
-        for _ in range(max_attempts):
+    def create_valid_individual(self) -> Optional[Individual]:
+        while(True):
             encoding = self._create_constrained_encoding()
             if Encoder.validate_encoding(encoding):
-                individual = Individual(encoding)
-                individual.birth_generation = 0
-                return individual
-        return self._create_conservative_individual()
+                return Individual(encoding)
+
+            
     
     def _create_constrained_encoding(self) -> List[int]:
         max_downsampling = Encoder.get_max_downsampling()
@@ -97,49 +96,6 @@ class PopulationInitializer:
                 encoding.extend(block_params.to_list())
         
         return encoding
-    
-    def _create_conservative_individual(self) -> Individual:
-        unit_num = config.MIN_UNIT_NUM
-        encoding = [unit_num]
-        for _ in range(unit_num):
-            encoding.append(config.MIN_BLOCK_NUM)
-            
-        for i in range(unit_num):
-            for j in range(config.MIN_BLOCK_NUM):
-                out_channels = random.choice(config.CHANNEL_OPTIONS[:3])
-                groups = 1
-                pool_type = random.choice(config.POOL_TYPE_OPTIONS)
-                pool_stride = 2 if i == 0 and j == 0 else 1
-                has_senet = random.choice(config.SENET_OPTIONS)
-                encoding.extend([out_channels, groups, pool_type, pool_stride, has_senet])
-        
-        individual = Individual(encoding)
-        individual.birth_generation = 0
-        return individual
-    
-    def create_diverse_population(self, population_size: int) -> List[Individual]:
-        population = []
-        unit_range = range(config.MIN_UNIT_NUM, config.MAX_UNIT_NUM + 1)
-        individuals_per_unit = max(1, population_size // len(unit_range))
-        
-        for unit_num in unit_range:
-            for _ in range(individuals_per_unit):
-                if len(population) >= population_size: break
-                
-                # Simplified: just create valid one, might not strictly follow unit_num if random fails
-                # But to keep logic simple, we rely on create_valid_individual or implement custom logic
-                # For now, let's just use create_valid_individual iteratively
-                # To strictly follow unit_num, we would need _create_individual_with_unit_num
-                # Let's implement a simple version of that inline or call create_valid_individual
-                
-                ind = self.create_valid_individual() # Placeholder for strict unit num logic
-                if ind: population.append(ind)
-                
-        while len(population) < population_size:
-            ind = self.create_valid_individual()
-            if ind: population.append(ind)
-            
-        return population
 
 # Global instances
 search_space = SearchSpace()

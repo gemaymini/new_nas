@@ -10,10 +10,10 @@ import sys
 import os
 
 # 添加项目根目录到路径
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
 from core.encoding import Individual
-from model.network import NetworkBuilder
+from models.network import NetworkBuilder
 
 CIFAR10_CLASSES = (
     'plane', 'car', 'bird', 'cat', 'deer', 

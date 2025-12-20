@@ -6,10 +6,10 @@
 import random
 import copy
 from typing import List, Tuple
-from new_nas.utils.config import config
-from new_nas.core.encoding import Encoder, Individual
-from new_nas.core.search_space import search_space
-from new_nas.utils.logger import logger
+from configuration.config import config
+from core.encoding import Encoder, Individual
+from core.search_space import search_space
+from utils.logger import logger
 
 class MutationOperator:
     def __init__(self):
@@ -105,7 +105,7 @@ class MutationOperator:
             
         return Encoder.encode(unit_num, block_nums, block_params_list)
 
-    def mutate(self, individual: Individual, current_gen: int) -> Individual:
+    def mutate(self, individual: Individual) -> Individual:
         new_encoding = copy.deepcopy(individual.encoding)
         mutation_applied = False
         
@@ -129,7 +129,6 @@ class MutationOperator:
             new_encoding = self.modify_block(new_encoding)
             
         new_individual = Individual(new_encoding)
-        new_individual.birth_generation = current_gen
         logger.log_mutation("mutate", individual.id, new_individual.id)
         return new_individual
 
@@ -146,7 +145,7 @@ class SelectionOperator:
 
 class CrossoverOperator:
     @staticmethod
-    def uniform_unit_crossover(parent1: Individual, parent2: Individual, current_gen: int) -> Tuple[Individual, Individual]:
+    def uniform_unit_crossover(parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
         unit_num1, block_nums1, block_params_list1 = Encoder.decode(parent1.encoding)
         unit_num2, block_nums2, block_params_list2 = Encoder.decode(parent2.encoding)
         
@@ -180,13 +179,11 @@ class CrossoverOperator:
                 c2_nums.append(bn1); c2_params.append(bp1)
 
         child1 = Individual(Encoder.encode(new_unit_num, c1_nums, c1_params))
-        child1.birth_generation = current_gen
         child2 = Individual(Encoder.encode(new_unit_num, c2_nums, c2_params))
-        child2.birth_generation = current_gen
         return child1, child2
 
-    def crossover(self, parent1: Individual, parent2: Individual, current_gen: int) -> Tuple[Individual, Individual]:
-        return self.uniform_unit_crossover(parent1, parent2, current_gen)
+    def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
+        return self.uniform_unit_crossover(parent1, parent2)
 
 mutation_operator = MutationOperator()
 selection_operator = SelectionOperator()

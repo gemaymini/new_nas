@@ -6,7 +6,7 @@
 import torch
 import torch.nn as nn
 from typing import List
-from utils.config import config
+from configuration.config import config
 from core.encoding import Encoder, BlockParams
 from utils.logger import logger
 

@@ -6,7 +6,7 @@
 import random
 import copy
 from typing import List, Tuple, Optional
-from utils.config import config
+from configuration.config import config
 
 class BlockParams:
     """
@@ -37,37 +37,16 @@ class Individual:
     """
     个体类，表示一个网络架构候选解
     """
-    _id_counter = 0
-    
     def __init__(self, encoding: Optional[List[int]] = None):
-        Individual._id_counter += 1
-        self.id = Individual._id_counter
-        
+        self.id = None       
         self.encoding = encoding if encoding is not None else []
-        
+        self.quick_score=0
         # 评估属性
         self.fitness = None
-        self.param_count = None
-        self.survival_time = 0
-        self.birth_generation = 0
-        self.quick_score = None
         
-        # NSGA-II属性
-        self.rank = None
-        self.crowding_distance = 0.0
-        self.objectives = []
-        
-        # 支配关系
-        self.dominated_solutions = []
-        self.domination_count = 0
-    
     def copy(self) -> 'Individual':
         new_ind = Individual(copy.deepcopy(self.encoding))
         new_ind.fitness = self.fitness
-        new_ind.param_count = self.param_count
-        new_ind.survival_time = self.survival_time
-        new_ind.birth_generation = self.birth_generation
-        new_ind.quick_score = self.quick_score
         return new_ind
     
     def __repr__(self):

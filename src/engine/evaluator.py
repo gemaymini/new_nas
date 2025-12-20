@@ -5,9 +5,9 @@ import gc
 import time
 import os
 from typing import Tuple, List
-from utils.config import config
+from configuration.config import config
 from core.encoding import Individual, Encoder
-from model.network import NetworkBuilder
+from models.network import NetworkBuilder
 from utils.logger import logger, failed_logger
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer

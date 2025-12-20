@@ -9,7 +9,7 @@ import torch.optim as optim
 import copy
 from torch.utils.data import DataLoader
 from typing import Tuple, List
-from utils.config import config
+from configuration.config import config
 from utils.logger import logger
 
 class NetworkTrainer:
@@ -82,7 +82,7 @@ class NetworkTrainer:
                      testloader: DataLoader, epochs: int = None,
                      lr: float = None, momentum: float = None,
                      weight_decay: float = None) -> Tuple[float, List[dict]]:
-        if epochs is None: epochs = config.FINAL_TRAIN_EPOCHS
+        if epochs is None: epochs = config.FULL_TRAIN_EPOCHS
         if lr is None: lr = config.LEARNING_RATE
         if momentum is None: momentum = config.MOMENTUM
         if weight_decay is None: weight_decay = config.WEIGHT_DECAY
