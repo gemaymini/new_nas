@@ -1,158 +1,243 @@
 # -*- coding: utf-8 -*-
 """
-进化算法模块
-实现三阶段进化流程
+Aging Evolution (Regularized Evolution) Algorithm Implementation
 """
 import random
 import os
 import pickle
 import time
+import threading
+from collections import deque
 from typing import List, Tuple, Optional
-from utils.config import config
-from core.encoding import Encoder, Individual
-from core.search_space import population_initializer
-from search.mutation import mutation_operator, selection_operator, crossover_operator, adaptive_mutation_controller
-from engine.evaluator import fitness_evaluator, FinalEvaluator
-from search.nsga2 import NSGAII
-from utils.logger import logger, tb_logger, failed_logger
+from copy import deepcopy
 
-class EvolutionaryNAS:
-    def __init__(self, population_size: int = None, max_gen: int = None,
-                 g1: int = None, g2: int = None):
-        self.population_size = population_size or config.POPULATION_SIZE
-        self.max_gen = max_gen or config.MAX_GEN
-        self.g1 = g1 or config.G1
-        self.g2 = g2 or config.G2
+from new_nas.utils.config import config
+from new_nas.core.encoding import Encoder, Individual
+from new_nas.core.search_space import population_initializer
+from new_nas.search.mutation import mutation_operator, selection_operator, crossover_operator
+from new_nas.engine.evaluator import fitness_evaluator, FinalEvaluator
+from new_nas.utils.logger import logger, tb_logger, failed_logger
+
+class AgingEvolutionNAS:
+    def __init__(self):
+        self.population_size = config.POPULATION_SIZE
+        self.max_gen = config.MAX_GEN # Total individuals to evaluate
         
-        self.population: List[Individual] = []
-        self.current_gen = 0
-        self.best_individual: Optional[Individual] = None
-        self.history = []
-        self.pareto_history = []
+        # 1. Population & History Management
+        # Using deque for FIFO queue (fixed size handled by manual popleft)
+        self.population = deque() 
+        self.history: List[Individual] = []
+        self.lock = threading.Lock()
+        
+        self.current_step = 0
+        self.start_time = time.time()
         
         self._log_search_space_info()
 
     def _log_search_space_info(self):
         logger.info(config.get_search_space_summary())
-        logger.info(f"Pop Size: {self.population_size}, Max Gen: {self.max_gen}")
-
-    def get_current_phase(self) -> int:
-        if self.current_gen < self.g1: return 1
-        elif self.current_gen < self.g2: return 2
-        else: return 3
+        logger.info(f"Aging Evolution Config: Pop Size={self.population_size}, Total Gen={self.max_gen}")
 
     def initialize_population(self):
+        """
+        Initialize the population with random individuals until queue is full.
+        """
         logger.info("Initializing population...")
-        self.population = population_initializer.create_diverse_population(self.population_size)
-        self.current_gen = 0
-        self._validate_and_filter_population()
-        self.population = self._deduplicate_population(self.population)
-        if len(self.population) < self.population_size:
-            self.population = self._fill_population(self.population, self.population_size)
         
-        self._evaluate_population()
-        self._update_best()
-        logger.info(f"Population initialized with {len(self.population)} individuals")
-
-    def _validate_and_filter_population(self):
-        valid_population = []
-        for ind in self.population:
-            if Encoder.validate_encoding(ind.encoding):
-                valid_population.append(ind)
-            else:
-                failed_logger.save_failed_individual(ind, "Invalid encoding", self.current_gen)
-        
-        while len(valid_population) < self.population_size:
-            new_ind = population_initializer.create_valid_individual()
-            if new_ind: valid_population.append(new_ind)
-        self.population = valid_population
-
-    def _deduplicate_population(self, population: List[Individual]) -> List[Individual]:
-        seen_encodings = {}
-        for ind in population:
-            encoding_key = tuple(ind.encoding)
-            if encoding_key not in seen_encodings:
-                seen_encodings[encoding_key] = ind
-            else:
-                existing = seen_encodings[encoding_key]
-                existing_fitness = existing.fitness if existing.fitness else float('-inf')
-                new_fitness = ind.fitness if ind.fitness else float('-inf')
-                if new_fitness > existing_fitness:
-                    seen_encodings[encoding_key] = ind
-        return list(seen_encodings.values())
-
-    def _fill_population(self, population: List[Individual], target_size: int) -> List[Individual]:
-        existing_encodings = {tuple(ind.encoding) for ind in population}
-        attempts = 0
-        while len(population) < target_size and attempts < target_size * 10:
-            attempts += 1
-            new_ind = population_initializer.create_valid_individual()
-            if new_ind:
-                new_encoding = tuple(new_ind.encoding)
-                if new_encoding not in existing_encodings:
-                    population.append(new_ind)
-                    existing_encodings.add(new_encoding)
-        return population
-
-    def _evaluate_population(self):
-        phase = self.get_current_phase()
-        if phase == 1 or phase == 3:
-            logger.info(f"Phase {phase}: Using NTK evaluation")
-            fitness_evaluator.evaluate_population_ntk(self.population)
-        else:
-            logger.info("Phase 2: Using survival time and parameter count (NSGA-II)")
-            fitness_evaluator.evaluate_population_survival(self.population, self.current_gen)
-
-    def _generate_two_offspring(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
-        if random.random() < config.PROB_CROSSOVER:
-            child1, child2 = crossover_operator.crossover(parent1, parent2, self.current_gen)
-            if random.random() < config.PROB_MUTATION: child1 = mutation_operator.mutate(child1, self.current_gen)
-            if random.random() < config.PROB_MUTATION: child2 = mutation_operator.mutate(child2, self.current_gen)
-        else:
-            if random.random() < config.PROB_MUTATION:
-                child1 = mutation_operator.mutate(parent1, self.current_gen)
-            else:
-                child1 = parent1.copy(); child1.birth_generation = self.current_gen
+        while len(self.population) < self.population_size:
+            ind = population_initializer.create_valid_individual()
+            if not ind: continue
             
-            if random.random() < config.PROB_MUTATION:
-                child2 = mutation_operator.mutate(parent2, self.current_gen)
-            else:
-                child2 = parent2.copy(); child2.birth_generation = self.current_gen
-                
-        return self._try_repair(child1, [parent1, parent2]), self._try_repair(child2, [parent1, parent2])
+            # Evaluate immediately
+            fitness_evaluator.evaluate_individual(ind)
+            ind.birth_generation = 0 # Initial population born at 0
+            
+            self.population.append(ind)
+            self.history.append(ind)
+            
+            if len(self.population) % 10 == 0:
+                logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
 
-    def _try_repair(self, ind: Individual, parents: List[Individual]) -> Individual:
+        logger.info(f"Population initialized. Size: {len(self.population)}")
+        self._record_statistics()
+
+    def _select_parents(self) -> Tuple[Individual, Individual]:
+        """
+        Tournament selection to choose 2 parents.
+        """
+        # Convert deque to list for random sampling
+        current_pop_list = list(self.population)
+        
+        # Tournament selection returns sorted winners (best first)
+        parents = selection_operator.tournament_selection(
+            current_pop_list, 
+            tournament_size=config.TOURNAMENT_SIZE,
+            num_winners=config.TOURNAMENT_WINNERS
+        )
+        
+        # If not enough parents (shouldn't happen if pop_size >= 2), duplicate best
+        if len(parents) < 2:
+            return parents[0], parents[0]
+            
+        return parents[0], parents[1]
+
+    def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
+        """
+        Generate ONE offspring using Crossover and Mutation.
+        """
+        child = None
+        
+        # Crossover
+        if random.random() < config.PROB_CROSSOVER:
+            # Generate 2 children, pick random one
+            c1, c2 = crossover_operator.crossover(parent1, parent2, self.current_step)
+            child = random.choice([c1, c2])
+        else:
+            child = random.choice([parent1, parent2]).copy()
+            child.birth_generation = self.current_step
+
+        # Mutation
+        if random.random() < config.PROB_MUTATION:
+            child = mutation_operator.mutate(child, self.current_step)
+            
+        # Validate and Repair
+        if not Encoder.validate_encoding(child.encoding):
+            child = self._repair_individual(child, [parent1, parent2])
+            
+        return child
+
+    def _repair_individual(self, ind: Individual, parents: List[Individual]) -> Individual:
         for _ in range(5):
+            ind = mutation_operator.mutate(random.choice(parents), self.current_step)
             if Encoder.validate_encoding(ind.encoding): return ind
-            parent = random.choice(parents)
-            ind = mutation_operator.mutate(parent, self.current_gen)
         return random.choice(parents).copy()
 
-    def _select_survivors(self, combined_population: List[Individual]) -> List[Individual]:
-        phase = self.get_current_phase()
-        if phase == 2:
-            survivors = NSGAII.select_by_nsga2(combined_population, self.population_size)
-            pareto_front = NSGAII.get_pareto_front(combined_population)
-            self.pareto_history.append({
-                'generation': self.current_gen,
-                'pareto_front': [(ind.id, ind.survival_time, ind.param_count) for ind in pareto_front]
-            })
-            tb_logger.log_pareto_front(self.current_gen, pareto_front)
-        else:
-            sorted_pop = sorted(combined_population, key=lambda x: x.fitness if x.fitness else float('-inf'), reverse=True)
-            survivors = sorted_pop[:self.population_size]
-        return survivors
+    def step(self):
+        """
+        Perform one step of Aging Evolution:
+        1. Select parents
+        2. Generate child
+        3. Evaluate child
+        4. Atomic update: Push child, Pop oldest
+        """
+        self.current_step += 1
+        
+        # 1. Select Parents
+        parent1, parent2 = self._select_parents()
+        
+        # 2. Generate Offspring
+        child = self._generate_offspring(parent1, parent2)
+        child.id = len(self.history) + 1 # Assign new ID based on total history
+        
+        # 3. Evaluate (Calculate NTK)
+        fitness_evaluator.evaluate_individual(child)
+        
+        # 4. Atomic Update
+        with self.lock:
+            # Remove oldest (head of deque)
+            removed_ind = self.population.popleft()
+            
+            # Add new (tail of deque)
+            self.population.append(child)
+            
+            # Add to history
+            self.history.append(child)
+            
+        # Logging
+        if self.current_step % 10 == 0:
+            logger.info(f"Step {self.current_step}/{self.max_gen}: Child Fitness={child.fitness:.4f}")
+            self._record_statistics()
 
-    def _update_best(self):
-        if not self.population: return
-        current_best = max(self.population, key=lambda x: x.fitness if x.fitness else float('-inf'))
-        if (self.best_individual is None or 
-            (current_best.fitness is not None and 
-             (self.best_individual.fitness is None or current_best.fitness > self.best_individual.fitness))):
-            self.best_individual = current_best.copy()
-            logger.info(f"New best: ID={self.best_individual.id}, Fitness={self.best_individual.fitness}")
-            logger.log_architecture(self.best_individual.id, self.best_individual.encoding, 
-                                    self.best_individual.fitness, self.best_individual.param_count, "[NEW BEST] ")
+    def run_search(self):
+        """
+        Main loop for Aging Evolution Search.
+        """
+        logger.info(f"Starting Aging Evolution Search for {self.max_gen} steps...")
+        
+        if not self.population:
+            self.initialize_population()
+            
+        # Continue until we have generated MAX_GEN individuals (including initial pop)
+        # Or just run MAX_GEN steps? Usually MAX_GEN implies total evaluations.
+        # Let's say we run until len(history) >= MAX_GEN
+        
+        while len(self.history) < self.max_gen:
+            self.step()
+            
+            if len(self.history) % 100 == 0:
+                self.save_checkpoint()
+
+        logger.info("Search completed.")
+        self.save_checkpoint()
+
+    def run_screening_and_training(self):
+        """
+        Multi-stage screening and final training.
+        """
+        logger.info("Starting Screening and Training Phase...")
+        
+        # 1. History Screening (Top N1 by NTK)
+        # Deduplicate history first based on encoding
+        unique_history = {}
+        for ind in self.history:
+            enc_tuple = tuple(ind.encoding)
+            if enc_tuple not in unique_history:
+                unique_history[enc_tuple] = ind
+            else:
+                if ind.fitness > unique_history[enc_tuple].fitness:
+                    unique_history[enc_tuple] = ind
+        
+        candidates = list(unique_history.values())
+        candidates.sort(key=lambda x: x.fitness if x.fitness else float('-inf'), reverse=True)
+        
+        top_n1 = candidates[:config.HISTORY_TOP_N1]
+        logger.info(f"Selected Top {config.HISTORY_TOP_N1} candidates from {len(candidates)} unique history individuals based on NTK.")
+        
+        # 2. Short Training (Top N1 -> Val Acc)
+        logger.info(f"Starting Short Training ({config.SHORT_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N1}...")
+        
+        # We use FinalEvaluator but with fewer epochs
+        # Note: FinalEvaluator usually saves models. We might want to disable saving for short train or overwrite.
+        # Let's use a temporary evaluator or just FinalEvaluator.
+        
+        evaluator = FinalEvaluator(dataset=config.FINAL_DATASET)
+        
+        short_results = []
+        for i, ind in enumerate(top_n1):
+            logger.info(f"Short Train [{i+1}/{len(top_n1)}] ID: {ind.id}")
+            # Use 'quick_score' to store val acc from short training to avoid overwriting 'fitness' (NTK)
+            # But FinalEvaluator returns best_acc.
+            acc, _ = evaluator.evaluate_individual(ind, epochs=config.SHORT_TRAIN_EPOCHS)
+            ind.quick_score = acc # Store for sorting
+            short_results.append(ind)
+            
+        # 3. Select Top N2 (by Val Acc)
+        short_results.sort(key=lambda x: x.quick_score if x.quick_score else float('-inf'), reverse=True)
+        top_n2 = short_results[:config.HISTORY_TOP_N2]
+        logger.info(f"Selected Top {config.HISTORY_TOP_N2} candidates based on Short Training Accuracy.")
+        
+        # 4. Full Training (Top N2 -> Final Model)
+        logger.info(f"Starting Full Training ({config.FULL_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N2}...")
+        
+        final_results = []
+        best_final_ind = None
+        best_final_acc = 0.0
+        
+        for i, ind in enumerate(top_n2):
+            logger.info(f"Full Train [{i+1}/{len(top_n2)}] ID: {ind.id}")
+            acc, result = evaluator.evaluate_individual(ind, epochs=config.FULL_TRAIN_EPOCHS)
+            
+            # Log result
+            logger.info(f"Individual {ind.id} Final Accuracy: {acc:.2f}%")
+            
+            if acc > best_final_acc:
+                best_final_acc = acc
+                best_final_ind = ind
+                
+            final_results.append(result)
+            
+        logger.info(f"Best Final Model: ID={best_final_ind.id}, Acc={best_final_acc:.2f}%")
+        return best_final_ind
 
     def _record_statistics(self):
         fitnesses = [ind.fitness for ind in self.population if ind.fitness is not None]
@@ -163,102 +248,32 @@ class EvolutionaryNAS:
             avg_fitness = best_fitness = 0.0
             
         stats = {
-            'generation': self.current_gen,
-            'phase': self.get_current_phase(),
+            'generation': self.current_step,
             'best_fitness': best_fitness,
             'avg_fitness': avg_fitness,
+            'population_size': len(self.population)
         }
-        self.history.append(stats)
-        logger.log_generation(self.current_gen, best_fitness, avg_fitness, len(self.population))
-        tb_logger.log_generation_stats(self.current_gen, stats)
         
-        if best_fitness > 0:
-            adaptive_mutation_controller.update(self.current_gen, best_fitness, self.get_current_phase())
-            
-        # Count and log unit statistics
+        # Use existing logger methods (might need adaptation)
+        logger.log_generation(self.current_step, best_fitness, avg_fitness, len(self.population))
+        tb_logger.log_generation_stats(self.current_step, stats)
+        
+        # Unit stats
         unit_counts = {}
         for ind in self.population:
-            # Assuming Encoder.decode returns (unit_num, block_nums, block_params)
-            # We can access unit_num directly from the encoding if it's the first element
-            # based on Encoder.create_random_encoding
-            try:
-                if ind.encoding:
-                    unit_num = ind.encoding[0]
-                    unit_counts[unit_num] = unit_counts.get(unit_num, 0) + 1
-            except Exception:
-                pass
-        
-        logger.log_unit_stats(self.current_gen, unit_counts)
-
-    def evolve_one_generation(self):
-        self.current_gen += 1
-        logger.log_phase_change(self.current_gen, self.get_current_phase())
-        
-        offspring_list = []
-        num_pairs = self.population_size // 2
-        for _ in range(num_pairs):
-            parents = selection_operator.tournament_selection(self.population)
-            if len(parents) < 2: parents = parents * 2
-            c1, c2 = self._generate_two_offspring(parents[0], parents[1])
-            offspring_list.extend([c1, c2])
-            
-        if self.population_size % 2 != 0:
-             parents = selection_operator.tournament_selection(self.population)
-             c1, _ = self._generate_two_offspring(parents[0], parents[0])
-             offspring_list.append(c1)
-
-        # Evaluate offspring
-        phase = self.get_current_phase()
-        if phase in [1, 3]:
-            fitness_evaluator.evaluate_population_ntk(offspring_list)
-        else:
-            for ind in offspring_list: ind.survival_time = 0
-            fitness_evaluator.evaluate_population_survival(offspring_list, self.current_gen)
-
-        combined = self.population + offspring_list
-        combined = self._deduplicate_population(combined)
-        self.population = self._select_survivors(combined)
-        
-        if len(self.population) < self.population_size:
-            self.population = self._fill_population(self.population, self.population_size)
-            
-        self._update_best()
-        self._record_statistics()
-
-    def run(self, num_generations: int = None, final_eval: bool = True):
-        if num_generations is None: num_generations = self.max_gen
-        logger.info(f"Starting evolution for {num_generations} generations")
-        
-        start_time = time.time()
-        if not self.population:
-            self.initialize_population()
-            self._record_statistics()
-            
-        for _ in range(num_generations):
-            self.evolve_one_generation()
-            if config.SAVE_CHECKPOINT and self.current_gen % 10 == 0:
-                self.save_checkpoint()
-                
-        tb_logger.close()
-        logger.info(f"Evolution completed in {time.time() - start_time:.2f}s")
-        
-        if final_eval:
-            return self.final_evaluation()
-        return self.best_individual
-
-    def final_evaluation(self):
-        evaluator = FinalEvaluator()
-        return evaluator.evaluate_top_individuals(self.population)
+            if ind.encoding:
+                unit_num = ind.encoding[0]
+                unit_counts[unit_num] = unit_counts.get(unit_num, 0) + 1
+        logger.log_unit_stats(self.current_step, unit_counts)
 
     def save_checkpoint(self, filepath: str = None):
         if filepath is None:
             if not os.path.exists(config.CHECKPOINT_DIR): os.makedirs(config.CHECKPOINT_DIR)
-            filepath = os.path.join(config.CHECKPOINT_DIR, f'checkpoint_gen{self.current_gen}.pkl')
+            filepath = os.path.join(config.CHECKPOINT_DIR, f'checkpoint_step{self.current_step}.pkl')
         
         checkpoint = {
-            'current_gen': self.current_gen,
-            'population': self.population,
-            'best_individual': self.best_individual,
+            'current_step': self.current_step,
+            'population': list(self.population), # Convert deque to list for pickling
             'history': self.history,
         }
         with open(filepath, 'wb') as f:
@@ -268,8 +283,16 @@ class EvolutionaryNAS:
     def load_checkpoint(self, filepath: str):
         with open(filepath, 'rb') as f:
             checkpoint = pickle.load(f)
-        self.current_gen = checkpoint['current_gen']
-        self.population = checkpoint['population']
-        self.best_individual = checkpoint['best_individual']
+        self.current_step = checkpoint['current_step']
+        self.population = deque(checkpoint['population'])
         self.history = checkpoint['history']
         logger.info(f"Checkpoint loaded from {filepath}")
+
+# Main execution helper
+def main():
+    nas = AgingEvolutionNAS()
+    nas.run_search()
+    nas.run_screening_and_training()
+
+if __name__ == "__main__":
+    main()

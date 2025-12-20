@@ -44,9 +44,9 @@ def train_from_checkpoint(checkpoint_path: str, top_k: int = None, epochs: int =
 
     # Use config values if not provided
     if top_k is None:
-        top_k = config.FINAL_TOP_K
+        top_k = config.HISTORY_TOP_N2
     if epochs is None:
-        epochs = config.FINAL_TRAIN_EPOCHS
+        epochs = config.FULL_TRAIN_EPOCHS
 
     print(f"Configuration:")
     print(f"- Top K: {top_k}")
@@ -79,7 +79,9 @@ def train_from_checkpoint(checkpoint_path: str, top_k: int = None, epochs: int =
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Top-K models from a checkpoint')
     parser.add_argument('checkpoint_path', type=str, help='Path to the .pkl checkpoint file')
-
+    parser.add_argument('--top_k', type=int, default=None, help=f'Number of top individuals to train (default: {config.HISTORY_TOP_N2})')
+    parser.add_argument('--epochs', type=int, default=None, help=f'Number of epochs to train (default: {config.FULL_TRAIN_EPOCHS})')
+    
     args = parser.parse_args()
     
-    train_from_checkpoint(args.checkpoint_path)
+    train_from_checkpoint(args.checkpoint_path, args.top_k, args.epochs)

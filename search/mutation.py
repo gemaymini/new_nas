@@ -1,80 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 变异算子模块
-实现各种变异操作，支持自适应变异
+实现各种变异操作
 """
 import random
 import copy
 from typing import List, Tuple
-from utils.config import config
-from core.encoding import Encoder, Individual
-from core.search_space import search_space
-from utils.logger import logger
-
-class AdaptiveMutationController:
-    def __init__(self):
-        self.best_fitness_history = []
-        self.stagnation_counter = 0
-        self.current_scale = 1.0
-        
-    def update(self, current_gen: int, best_fitness: float, phase: int):
-        if phase == 1:
-            phase_scale = config.MUTATION_SCALE_PHASE1
-        elif phase == 2:
-            phase_scale = config.MUTATION_SCALE_PHASE2
-        else:
-            phase_scale = config.MUTATION_SCALE_PHASE3
-            
-        if self.best_fitness_history:
-            if best_fitness <= max(self.best_fitness_history[-config.STAGNATION_THRESHOLD:]):
-                self.stagnation_counter += 1
-            else:
-                self.stagnation_counter = 0
-                
-        self.best_fitness_history.append(best_fitness)
-        
-        if self.stagnation_counter >= config.STAGNATION_THRESHOLD:
-            self.current_scale = phase_scale * config.STAGNATION_MUTATION_BOOST
-        else:
-            self.current_scale = phase_scale
-        return self.current_scale
-
-    def get_scaled_probability(self, base_prob: float) -> float:
-        if not config.ADAPTIVE_MUTATION: return base_prob
-        return min(1.0, base_prob * self.current_scale)
-        
-    def reset(self):
-        self.best_fitness_history = []
-        self.stagnation_counter = 0
-        self.current_scale = 1.0
-
-adaptive_mutation_controller = AdaptiveMutationController()
+from new_nas.utils.config import config
+from new_nas.core.encoding import Encoder, Individual
+from new_nas.core.search_space import search_space
+from new_nas.utils.logger import logger
 
 class MutationOperator:
     def __init__(self):
-        self.base_prob_swap_blocks = config.PROB_SWAP_BLOCKS
-        self.base_prob_swap_units = config.PROB_SWAP_UNITS
-        self.base_prob_add_unit = config.PROB_ADD_UNIT
-        self.base_prob_add_block = config.PROB_ADD_BLOCK
-        self.base_prob_delete_unit = config.PROB_DELETE_UNIT
-        self.base_prob_delete_block = config.PROB_DELETE_BLOCK
-        self.base_prob_modify_block = config.PROB_MODIFY_BLOCK
+        # 使用全局固定的变异概率
+        self.prob_swap_blocks = config.PROB_SWAP_BLOCKS
+        self.prob_swap_units = config.PROB_SWAP_UNITS
+        self.prob_add_unit = config.PROB_ADD_UNIT
+        self.prob_add_block = config.PROB_ADD_BLOCK
+        self.prob_delete_unit = config.PROB_DELETE_UNIT
+        self.prob_delete_block = config.PROB_DELETE_BLOCK
+        self.prob_modify_block = config.PROB_MODIFY_BLOCK
         
-    @property
-    def prob_swap_blocks(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_swap_blocks)
-    @property
-    def prob_swap_units(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_swap_units)
-    @property
-    def prob_add_unit(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_add_unit)
-    @property
-    def prob_add_block(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_add_block)
-    @property
-    def prob_delete_unit(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_delete_unit)
-    @property
-    def prob_delete_block(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_delete_block)
-    @property
-    def prob_modify_block(self): return adaptive_mutation_controller.get_scaled_probability(self.base_prob_modify_block)
-
     def swap_blocks(self, encoding: List[int]) -> List[int]:
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         all_positions = []
@@ -162,6 +109,7 @@ class MutationOperator:
         new_encoding = copy.deepcopy(individual.encoding)
         mutation_applied = False
         
+        # 使用固定概率进行变异操作
         if random.random() < self.prob_swap_blocks:
             new_encoding = self.swap_blocks(new_encoding); mutation_applied = True
         if random.random() < self.prob_swap_units:
@@ -238,7 +186,6 @@ class CrossoverOperator:
         return child1, child2
 
     def crossover(self, parent1: Individual, parent2: Individual, current_gen: int) -> Tuple[Individual, Individual]:
-        # Simplify to just uniform for now as it's most robust
         return self.uniform_unit_crossover(parent1, parent2, current_gen)
 
 mutation_operator = MutationOperator()

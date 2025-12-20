@@ -11,17 +11,23 @@ class Config:
     """
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 50          # 种群大小
-    MAX_GEN = 50               # 最大进化代数
-    G1 = 30                  # 第一阶段结束代数
-    G2 = 40                         # 第二阶段结束代数
-    TOURNAMENT_SIZE = 5             # 锦标赛选择的个体数量
-    TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量
+    POPULATION_SIZE = 100           # 种群大小 (Aging Evolution Queue Size)
+    MAX_GEN = 5000                  # 最大进化代数 (Total number of individuals to evaluate in search)
+    TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
+    TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
+    
+    # ==================== 筛选与训练流程参数 ====================
+    HISTORY_TOP_N1 = 20             # 第一轮筛选：基于NTK选择Top N1
+    SHORT_TRAIN_EPOCHS = 20         # 第一轮筛选：短期训练轮数
+    
+    HISTORY_TOP_N2 = 5              # 第二轮筛选：基于验证集Acc选择Top N2
+    FULL_TRAIN_EPOCHS = 300         # 最终训练：完整训练轮数
     
     # ==================== 交叉算子参数 ====================
-    PROB_CROSSOVER = 0.6            # 交叉概率
-    PROB_MUTATION = 0.4             # 变异概率
-    CROSSOVER_TYPE = 'unit'         # 交叉类型
+    PROB_CROSSOVER = 0.5            # 交叉概率 (0.8)
+    PROB_MUTATION = 0.5            # 变异概率 (0.1)
+    
+    # ==================== 搜索空间参数 ====================
     
     # ==================== 搜索空间参数 ====================
     MIN_UNIT_NUM = 3                # 最小unit数量
@@ -43,21 +49,13 @@ class Config:
     INIT_CONV_PADDING = 1           
     
     # ==================== 变异概率参数 ====================
-    PROB_SWAP_BLOCKS = 0.4          
-    PROB_SWAP_UNITS = 0.4          
-    PROB_ADD_UNIT = 0.2             
-    PROB_ADD_BLOCK = 0.4           
-    PROB_DELETE_UNIT = 0.2          
-    PROB_DELETE_BLOCK = 0.4        
-    PROB_MODIFY_BLOCK = 0.5         
-    
-    # ==================== 自适应变异参数 ====================
-    ADAPTIVE_MUTATION = True        
-    MUTATION_SCALE_PHASE1 = 1.0     
-    MUTATION_SCALE_PHASE2 = 0.9     
-    MUTATION_SCALE_PHASE3 = 0.8     
-    STAGNATION_THRESHOLD = 5        
-    STAGNATION_MUTATION_BOOST = 1.5 
+    PROB_SWAP_BLOCKS = 0.8          
+    PROB_SWAP_UNITS = 0.8          
+    PROB_ADD_UNIT = 0.4             
+    PROB_ADD_BLOCK = 0.6           
+    PROB_DELETE_UNIT = 0.4          
+    PROB_DELETE_BLOCK = 0.6        
+    PROB_MODIFY_BLOCK = 0.8         
     
     # ==================== NTK评估配置 ====================
     NTK_BATCH_SIZE = 32              
@@ -65,11 +63,6 @@ class Config:
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
     NTK_PARAM_THRESHOLD = 44500000  # resnet101
-    
-    # ==================== 阶段2快速评估参数 ====================
-    PHASE2_QUICK_EVAL_SAMPLES = 2048   # 建议增加到2048，约为CIFAR-10的4%
-    PHASE2_QUICK_EVAL_EPOCHS = 10       # 建议增加到5轮，以更好地区分模型性能
-    PHASE2_QUICK_EVAL_BATCH_SIZE = 64  # 建议增加到64，提高GPU利用率 
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
@@ -79,8 +72,6 @@ class Config:
     WEIGHT_DECAY = 5e-4             
     
     # ==================== 最终评估参数 ====================
-    FINAL_TOP_K = 3             
-    FINAL_TRAIN_EPOCHS = 300       
     FINAL_DATASET = 'cifar10'       
     
     # ==================== SENet参数 ====================

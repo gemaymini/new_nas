@@ -75,10 +75,6 @@ class Logger:
         stats_str = ", ".join([f"{k} units: {v}" for k, v in sorted(unit_counts.items())])
         self.info(msg + stats_str)
         
-    def log_phase_change(self, gen, phase):
-        """记录阶段切换"""
-        self.info(f"Generation {gen}: Switching to Phase {phase}")
-
     def log_evaluation(self, ind_id, eval_type, score):
         """记录评估结果"""
         self.debug(f"Eval {ind_id} ({eval_type}): {score}")
@@ -107,10 +103,6 @@ class TBLogger:
         if self.writer:
             for key, value in stats.items():
                 self.writer.add_scalar(f"Stats/{key}", value, gen)
-
-    def log_pareto_front(self, gen, pareto_front):
-        # Implementation skipped for brevity
-        pass
 
     def close(self):
         if self.writer:

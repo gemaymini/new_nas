@@ -8,7 +8,7 @@ import sys
 import random
 import numpy as np
 from utils.config import config
-from search.evolution import EvolutionaryNAS
+from search.evolution import AgingEvolutionNAS
 from core.encoding import Encoder
 from model.network import NetworkBuilder
 from utils.logger import logger, tb_logger
@@ -29,8 +29,6 @@ def parse_args():
     # Evolution params
     parser.add_argument('--population_size', type=int, default=config.POPULATION_SIZE)
     parser.add_argument('--max_gen', type=int, default=config.MAX_GEN)
-    parser.add_argument('--g1', type=int, default=config.G1)
-    parser.add_argument('--g2', type=int, default=config.G2)
     
     # Other params
     parser.add_argument('--seed', type=int, default=config.RANDOM_SEED)
@@ -66,8 +64,6 @@ def main():
     # Update config
     config.POPULATION_SIZE = args.population_size
     config.MAX_GEN = args.max_gen
-    config.G1 = args.g1
-    config.G2 = args.g2
     config.DEVICE = args.device
     
     if args.device == 'cuda' and not torch.cuda.is_available():
@@ -77,11 +73,14 @@ def main():
     if args.test:
         logger.info("=== TEST MODE ===")
         test_network_building()
-        nas = EvolutionaryNAS(population_size=5, max_gen=2, g1=0, g2=1)
-        nas.run(final_eval=False)
+        # Test short run
+        config.POPULATION_SIZE = 10
+        config.MAX_GEN = 20
+        nas = AgingEvolutionNAS()
+        nas.run_search()
         return
 
-    nas = EvolutionaryNAS()
+    nas = AgingEvolutionNAS()
     
     if args.resume:
         try:
@@ -91,7 +90,8 @@ def main():
             sys.exit(1)
             
     try:
-        nas.run(final_eval=not args.no_final_eval)
+        nas.run_search()
+        nas.run_screening_and_training()
     except KeyboardInterrupt:
         logger.warning("Interrupted by user")
         nas.save_checkpoint()
