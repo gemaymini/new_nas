@@ -178,11 +178,13 @@ class AgingEvolutionNAS:
             if enc_tuple not in unique_history:
                 unique_history[enc_tuple] = ind
             else:
-                if ind.fitness > unique_history[enc_tuple].fitness:
+                # fitness 越小越好，保留更小的
+                if ind.fitness is not None and (unique_history[enc_tuple].fitness is None or ind.fitness < unique_history[enc_tuple].fitness):
                     unique_history[enc_tuple] = ind
         
         candidates = list(unique_history.values())
-        candidates.sort(key=lambda x: x.fitness if x.fitness else float('-inf'), reverse=True)
+        # fitness 越小越好，升序排列
+        candidates.sort(key=lambda x: x.fitness if x.fitness is not None else float('inf'), reverse=False)
         
         top_n1 = candidates[:config.HISTORY_TOP_N1]
         logger.info(f"Selected Top {config.HISTORY_TOP_N1} candidates from {len(candidates)} unique history individuals based on NTK.")
@@ -234,10 +236,16 @@ class AgingEvolutionNAS:
         return best_final_ind
 
     def _record_statistics(self):
+        # 排除极差的 fitness（100000）来计算平均值
         fitnesses = [ind.fitness for ind in self.population if ind.fitness is not None]
-        if fitnesses:
+        valid_fitnesses = [f for f in fitnesses if f < 100000.0]
+        
+        if valid_fitnesses:
+            avg_fitness = sum(valid_fitnesses) / len(valid_fitnesses)
+            best_fitness = min(valid_fitnesses)  # fitness 越小越好
+        elif fitnesses:
             avg_fitness = sum(fitnesses) / len(fitnesses)
-            best_fitness = max(fitnesses)
+            best_fitness = min(fitnesses)
         else:
             avg_fitness = best_fitness = 0.0
             

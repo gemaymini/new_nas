@@ -62,7 +62,7 @@ class Config:
     FORCE_CPU_EVAL_THRESHOLD = 100  
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 44500000  # resnet101
+    NTK_PARAM_THRESHOLD = 300000000  # 提高阈值，避免太多模型被跳过
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 

@@ -140,7 +140,8 @@ class SelectionOperator:
         
         tournament_size = min(tournament_size, len(population))
         competitors = random.sample(population, tournament_size)
-        sorted_competitors = sorted(competitors, key=lambda x: x.fitness if x.fitness else float('-inf'), reverse=True)
+        # fitness 越小越好，所以升序排列，取前面的作为胜者
+        sorted_competitors = sorted(competitors, key=lambda x: x.fitness if x.fitness is not None else float('inf'), reverse=False)
         return sorted_competitors[:num_winners]
 
 class CrossoverOperator:

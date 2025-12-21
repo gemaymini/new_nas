@@ -110,7 +110,16 @@ class NTKEvaluator:
         except AttributeError:
             eigenvalues, _ = torch.symeig(ntk)  # ✅ 正确解包
 
-        cond = (eigenvalues[-1] / eigenvalues[0]).item()
+        # 使用绝对值避免负特征值导致的负条件数
+        eigenvalues_abs = torch.abs(eigenvalues)
+        max_eigen = eigenvalues_abs.max().item()
+        min_eigen = eigenvalues_abs.min().item()
+        
+        # 避免除零
+        if min_eigen < 1e-10:
+            cond = 100000.0
+        else:
+            cond = max_eigen / min_eigen
         cond = np.nan_to_num(cond, nan=100000.0, posinf=100000.0, neginf=100000.0)
 
         del grads, grads_tensor, ntk, eigenvalues
@@ -159,8 +168,8 @@ class NTKEvaluator:
 
             score = self.compute_ntk_score(network, param_count)
 
-            # 注意：条件数越小越好，所以 fitness 取负值（进化算法通常越大越好）
-            fitness = -score
+            # fitness 直接等于 NTK 条件数（越小越好）
+            fitness = score
             individual.fitness = fitness
 
             del network
@@ -171,9 +180,9 @@ class NTKEvaluator:
 
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
-            individual.fitness = -100000.0
+            individual.fitness = 100000.0  # 极大值表示最差
             clear_gpu_memory()
-            return -100000.0
+            return 100000.0
 
 
 class FinalEvaluator:
@@ -241,7 +250,7 @@ class FinalEvaluator:
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
 
-        sorted_pop = sorted(population, key=lambda x: x.fitness or float('-inf'), reverse=True)
+        sorted_pop = sorted(population, key=lambda x: x.fitness if x.fitness is not None else float('inf'), reverse=False)
         top_individuals = sorted_pop[:top_k]
 
         results = []

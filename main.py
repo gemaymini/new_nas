@@ -37,7 +37,6 @@ def parse_args():
     
     # Other params
     parser.add_argument('--seed', type=int, default=config.RANDOM_SEED)
-    parser.add_argument('--test', action='store_true')
     parser.add_argument('--resume', type=str, default=None)
     parser.add_argument('--no_final_eval', action='store_true')
     
@@ -56,31 +55,23 @@ def main():
     if config.DEVICE == 'cuda' and not torch.cuda.is_available():
         logger.warning("CUDA not available, falling back to CPU")
         config.DEVICE = 'cpu'
-        
-    if args.test:
-        logger.info("=== TEST MODE ===")
-        config.POPULATION_SIZE = 10
-        config.MAX_GEN = 20
-        nas = AgingEvolutionNAS()
-        nas.run_search()
-        return
-    else:
-        nas = AgingEvolutionNAS()
-        if args.resume:
-            try:
-                nas.load_checkpoint(args.resume)
-            except Exception as e:
-                logger.error(f"Failed to load checkpoint: {e}")
-                sys.exit(1)
-                
+
+    nas = AgingEvolutionNAS()
+    if args.resume:
         try:
+            nas.load_checkpoint(args.resume)
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            sys.exit(1)
+                
+    try:
             nas.run_search()
             nas.run_screening_and_training()
-        except KeyboardInterrupt:
+    except KeyboardInterrupt:
             logger.warning("Interrupted by user")
             nas.save_checkpoint()
             sys.exit(0)
-        except Exception as e:
+    except Exception as e:
             logger.error(f"Evolution failed: {e}")
             nas.save_checkpoint()
             raise
