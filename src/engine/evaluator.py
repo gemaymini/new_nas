@@ -62,11 +62,16 @@ class NTKEvaluator:
                 _ = network(inputs)
         return network
 
-    def compute_ntk_condition_number(self, network: nn.Module, xloader, num_batch: int = -1) -> float:
+    def compute_ntk_condition_number(self, network: nn.Module, xloader, num_batch: int = -1, train_mode: bool = True) -> float:
         """严格按照 ntk.py 中的 get_ntk_n 逻辑计算单个网络的 NTK 条件数"""
         device = self.device if self.device == 'cpu' else 0
 
-        network.eval()  # 默认 eval 模式，与原始实现一致
+        # ✅ 修复1: 使用 train 模式
+        if train_mode:
+            network.train()
+        else:
+            network.eval()
+        
         grads = []
 
         for i, (inputs, _) in enumerate(xloader):
@@ -77,62 +82,71 @@ class NTKEvaluator:
             network.zero_grad()
             logit = network(inputs)
             if isinstance(logit, tuple):
-                logit = logit[1]  # 支持返回 (features, logits) 的网络
+                logit = logit[1]
 
             for idx in range(inputs.size(0)):
-                network.zero_grad()
                 logit[idx:idx + 1].backward(torch.ones_like(logit[idx:idx + 1]), retain_graph=True)
 
                 grad = []
                 for name, p in network.named_parameters():
                     if 'weight' in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach().clone())
+                        grad.append(p.grad.view(-1).detach())  # ✅ 不需要 clone
 
                 if grad:
-                    grads.append(torch.cat(grad))
+                    grads.append(torch.cat(grad, -1))  # ✅ 加上 dim=-1 保持一致
 
+                network.zero_grad()  # ✅ 移到这里，和原始代码一致
                 torch.cuda.empty_cache()
 
         if len(grads) == 0:
-            return 100000.0  # 无效网络，惩罚大条件数
+            return 100000.0
 
-        grads_tensor = torch.stack(grads)  # (N, C)
-        ntk = torch.einsum('nc,mc->nm', grads_tensor, grads_tensor)  # (N, N)
+        grads_tensor = torch.stack(grads, 0)  # (N, C)
+        ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])  # ✅ 注意括号格式
 
+        # ✅ 修复2: 正确处理特征值
         try:
-            eigenvalues = torch.linalg.eigh(ntk)[0]  # 升序
-        except Exception:
-            eigenvalues = torch.symeig(ntk, eigenvectors=False)
+            eigenvalues = torch.linalg.eigvalsh(ntk)  # 只返回特征值，更高效
+        except AttributeError:
+            eigenvalues, _ = torch.symeig(ntk)  # ✅ 正确解包
 
         cond = (eigenvalues[-1] / eigenvalues[0]).item()
         cond = np.nan_to_num(cond, nan=100000.0, posinf=100000.0, neginf=100000.0)
 
-        # 清理显存
-        del grads, grads_tensor, ntk, eigenvalues, logit
+        del grads, grads_tensor, ntk, eigenvalues
         clear_gpu_memory()
 
         return cond
 
-    def compute_ntk_score(self, network: nn.Module, param_count: int = None) -> float:
+
+    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 10) -> float:
+        """计算 NTK 分数，多次运行取平均"""
         try:
             if param_count and param_count > self.param_threshold:
                 logger.warning(f"Skipping NTK: params {param_count} > threshold {self.param_threshold}")
-                return 100000.0  # 大模型惩罚大条件数（差）
+                return 100000.0
 
             network = network.to(self.device)
 
             if self.recalbn > 0:
                 network = self.recal_bn(network, self.trainloader, self.recalbn, self.device)
 
-            cond = self.compute_ntk_condition_number(network, self.trainloader, num_batch=self.num_batch)
-
-            return cond
+            # ✅ 修复3: 多次计算取平均
+            total_cond = 0.0
+            for _ in range(num_runs):
+                cond = self.compute_ntk_condition_number(
+                    network, self.trainloader, 
+                    num_batch=self.num_batch, 
+                    train_mode=True  # ✅ 使用 train 模式
+                )
+                total_cond += cond
+            
+            return round(total_cond / num_runs, 3)
 
         except Exception as e:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
-            return 100000.0  # 出错也给差分
-
+            return 100000.0
     def evaluate_individual(self, individual: Individual) -> float:
         try:
             network = NetworkBuilder.build_from_individual(
