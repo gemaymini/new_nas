@@ -35,6 +35,11 @@ def parse_args():
     parser.add_argument('--population_size', type=int, default=config.POPULATION_SIZE)
     parser.add_argument('--max_gen', type=int, default=config.MAX_GEN)
     
+    # Dataset params
+    parser.add_argument('--dataset', type=str, default=config.FINAL_DATASET,
+                        choices=['cifar10', 'cifar100'],
+                        help='Dataset for training and evaluation (default: cifar10)')
+    
     # Other params
     parser.add_argument('--seed', type=int, default=config.RANDOM_SEED)
     parser.add_argument('--resume', type=str, default=None)
@@ -51,6 +56,15 @@ def main():
     set_seed(args.seed)
     config.POPULATION_SIZE = args.population_size
     config.MAX_GEN = args.max_gen
+    config.FINAL_DATASET = args.dataset
+    
+    # Update NTK_NUM_CLASSES based on dataset
+    if args.dataset == 'cifar100':
+        config.NTK_NUM_CLASSES = 100
+    else:
+        config.NTK_NUM_CLASSES = 10
+    
+    logger.info(f"Dataset: {config.FINAL_DATASET}, Num Classes: {config.NTK_NUM_CLASSES}")
     
     if config.DEVICE == 'cuda' and not torch.cuda.is_available():
         logger.warning("CUDA not available, falling back to CPU")
