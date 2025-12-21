@@ -48,7 +48,10 @@ class RegBlock(nn.Module):
         self.in_channels = in_channels
         self.mid_channels = block_params.out_channels
         self.pool_stride = block_params.pool_stride
-        self.out_channels = in_channels * block_params.pool_stride
+        # 输出通道数 = 中间通道数 × expansion
+        # 当 EXPANSION=1 时，out_channels = mid_channels，与原逻辑兼容
+        # 当 EXPANSION=2 时，类似 ResNeXt 的扩展方式
+        self.out_channels = self.mid_channels * config.EXPANSION
         self.groups = min(block_params.groups, self.mid_channels)
         self.has_senet = block_params.has_senet == 1
         

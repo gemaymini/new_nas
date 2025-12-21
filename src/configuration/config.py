@@ -42,6 +42,10 @@ class Config:
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
     
+    # Block扩展参数 (输出通道 = 中间通道 × EXPANSION)
+    # EXPANSION=1 时与原模型一致，EXPANSION=2 时类似ResNeXt
+    EXPANSION = 1
+    
     # 初始卷积层参数
     INIT_CONV_OUT_CHANNELS = 64    
     INIT_CONV_KERNEL_SIZE = 3       
