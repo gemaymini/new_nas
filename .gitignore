@@ -33,4 +33,5 @@ data/*
 .DS_Store
 Thumbs.db
 
-/test/experiment_results
+/test/*/
+*.txt

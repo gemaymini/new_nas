@@ -220,7 +220,8 @@ class Visualizer:
 
 def run_ntk_experiment(num_models=5, short_epochs=5):
     # Setup Paths
-    output_dir = os.path.join(os.path.dirname(__file__), 'ntk_experiment_results')
+    # Use absolute path to avoid issues with relative paths on servers
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ntk_experiment_results')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
@@ -314,4 +315,4 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             print(f"Visualization failed: {e}")
 
 if __name__ == "__main__":
-    run_ntk_experiment(num_models=2, short_epochs=2)
+    run_ntk_experiment(num_models=50, short_epochs=15)
