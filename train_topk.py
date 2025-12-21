@@ -69,9 +69,12 @@ def train_from_checkpoint(checkpoint_path: str, top_k: int = None, epochs: int =
     print("\n" + "="*50)
     print("Training Completed")
     print("="*50)
-    if best_ind:
+    if best_ind and results:
+        # 从 results 中获取最佳准确率
+        best_result = max(results, key=lambda x: x.get('best_accuracy', 0))
+        best_accuracy = best_result.get('best_accuracy', 0)
         print(f"Best Individual ID: {best_ind.id}")
-        print(f"Best Accuracy: {best_ind.fitness:.2f}%") # Fitness here is accuracy from FinalEvaluator
+        print(f"Best Accuracy: {best_accuracy:.2f}%")
         print(f"Model saved in: checkpoints/final_models/")
     else:
         print("No individuals were successfully trained.")

@@ -112,7 +112,7 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Continue training a model from .pth file')
     parser.add_argument('model_path', type=str, help='Path to the .pth model file')
-    parser.add_argument('--epochs', type=int, default=None, help='Number of additional epochs to train (default: 50)')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of additional epochs to train (default: 50)')
     parser.add_argument('--lr', type=float, default=None, help='Learning rate (default: use config value)')
     
     args = parser.parse_args()

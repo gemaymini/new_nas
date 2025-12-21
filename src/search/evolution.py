@@ -155,10 +155,10 @@ class AgingEvolutionNAS:
         # Or just run MAX_GEN steps? Usually MAX_GEN implies total evaluations.
         # Let's say we run until len(history) >= MAX_GEN
         
-        while len(self.history)-len(self.population) < self.max_gen:
+        while len(self.history) - len(self.population) < self.max_gen:
             self.step()
             
-            if len(self.history) -len(self.population) % 100 == 0:
+            if (len(self.history) - len(self.population)) % 100 == 0:
                 self.save_checkpoint()
 
         logger.info("Search completed.")

@@ -63,11 +63,13 @@ class PopulationInitializer:
     def __init__(self, search_space: SearchSpace):
         self.search_space = search_space
     
-    def create_valid_individual(self) -> Optional[Individual]:
-        while(True):
+    def create_valid_individual(self, max_attempts: int = 1000) -> Optional[Individual]:
+        for _ in range(max_attempts):
             encoding = self._create_constrained_encoding()
             if Encoder.validate_encoding(encoding):
                 return Individual(encoding)
+        logger.warning(f"Failed to create valid individual after {max_attempts} attempts")
+        return None
 
             
     
