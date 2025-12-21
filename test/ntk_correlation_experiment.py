@@ -88,12 +88,11 @@ class ExperimentLogger:
                 
             time.sleep(interval)
 
-    def log_model_result(self, model_id, encoding, history, ntk_score, ntk_cond, short_acc):
+    def log_model_result(self, model_id, encoding, history, ntk_cond, short_acc):
         with self._lock:
             self.log_data["models"].append({
                 "model_id": model_id,
                 "encoding": str(encoding),
-                "ntk_score": ntk_score,
                 "ntk_cond": ntk_cond,
                 "short_acc": short_acc,
                 "history": history
@@ -265,11 +264,9 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             # A. Calculate NTK
             print(f"Calculating NTK for model {i}...")
             ntk_evaluator.evaluate_individual(ind)
-            ntk_score = ind.fitness # This is 1/Cond (or similar score where higher is better)
-            
-            ntk_cond=-ntk_score
+            ntk_cond = ind.fitness  # fitness 直接等于 NTK 条件数（越小越好）
                 
-            print(f"Model {i}: NTK Score={ntk_score:.6f}, Cond={ntk_cond:.2f}")
+            print(f"Model {i}: NTK Cond={ntk_cond:.2f}")
             
             # B. Short Training
             network = NetworkBuilder.build_from_individual(
@@ -290,7 +287,7 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             print(f"Model {i}: Short Acc={short_acc:.2f}%")
             
             # Log Result
-            exp_logger.log_model_result(i, ind.encoding, history, ntk_score, ntk_cond, short_acc)
+            exp_logger.log_model_result(i, ind.encoding, history, ntk_cond, short_acc)
             
             # Clear memory
             del network
