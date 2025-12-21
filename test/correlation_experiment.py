@@ -117,6 +117,11 @@ class ExperimentLogger:
     def save_log(self):
         # Atomic write if possible, or just overwrite
         try:
+            # Ensure directory exists (robustness for server environments)
+            log_dir = os.path.dirname(self.log_file)
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+                
             with open(self.log_file, 'w') as f:
                 json.dump(self.log_data, f, indent=2)
         except Exception as e:
@@ -220,7 +225,8 @@ class Visualizer:
 
 def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
     # Setup Paths
-    output_dir = os.path.join(os.path.dirname(__file__), 'experiment_results')
+    # Use absolute path to avoid issues with relative paths on servers
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiment_results')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
