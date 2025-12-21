@@ -255,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description='Retrain a model structure multiple times and compute average performance')
     parser.add_argument('model_path', type=str, help='Path to the .pth model file')
     parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs per run (default: 300)')
-    parser.add_argument('--runs', type=int, default=10, help='Number of training runs (default: 10)')
+    parser.add_argument('--runs', type=int, default=3, help='Number of training runs (default: 10)')
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100'], 
                         help='Dataset to use (default: cifar10)')
     parser.add_argument('--device', type=str, default=None, choices=['cuda', 'cpu'],
