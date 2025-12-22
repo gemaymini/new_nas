@@ -7,8 +7,8 @@ import sys
 import os
 import argparse
 
-# 添加项目根目录到路径
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+# 添加src目录到路径 (apply现在位于src/apply/)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.encoding import Individual, Encoder
 from models.network import NetworkBuilder

@@ -19,8 +19,8 @@ import psutil
 import torch
 import hashlib
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+# Add src to path (apply is now under src/apply/)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from configuration.config import config
 from core.search_space import population_initializer

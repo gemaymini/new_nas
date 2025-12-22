@@ -7,8 +7,8 @@ import os
 import sys
 import torch
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+# Add src to path (apply is now under src/apply/)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from configuration.config import config
 from models.network import NetworkBuilder
