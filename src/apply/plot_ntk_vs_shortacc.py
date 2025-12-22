@@ -14,8 +14,9 @@ RESULTS_DIR = r"C:\Users\gemaymini\Desktop\data__history\ntk"
 SHORT_EPOCH = 15  # 可修改为你想要的小轮次epoch
 SAVE_PATH = os.path.join(RESULTS_DIR, f'ntk_vs_shortacc_scatter_epoch{SHORT_EPOCH}.png')
 
-all_ntk = []
-all_acc = []
+# 用于存储所有模型数据（未去重）
+all_data = []
+
 def _rankdata(arr):
     """Compute average ranks for Spearman correlation (ties get average rank)."""
     a = np.asarray(arr)
@@ -46,6 +47,7 @@ for log_path in log_files:
     for m in models:
         ntk = m.get('ntk_cond', None)
         model_id = m.get('model_id', None)
+        encoding = m.get('encoding', None)
         history = m.get('history', [])
         # 找到指定epoch的小轮次准确率
         acc = None
@@ -54,13 +56,31 @@ for log_path in log_files:
                 acc = h.get('test_acc', h.get('val_acc', None))
                 break
         if ntk is not None and acc is not None:
-            all_ntk.append(ntk)
-            all_acc.append(acc)
-            # 不再记录标签，避免图中过密
+            all_data.append({
+                'ntk': ntk,
+                'acc': acc,
+                'encoding': str(encoding) if encoding else f"{ntk}_{acc}",
+                'model_id': model_id
+            })
 
-if not all_ntk:
+if not all_data:
     print('No valid data found!')
     exit(1)
+
+# 去重：基于 encoding 去重，保留第一个出现的
+print(f"Total data points before deduplication: {len(all_data)}")
+seen_encodings = set()
+unique_data = []
+for d in all_data:
+    enc_key = d['encoding']
+    if enc_key not in seen_encodings:
+        seen_encodings.add(enc_key)
+        unique_data.append(d)
+print(f"Unique data points after deduplication: {len(unique_data)}")
+
+# 提取去重后的数据
+all_ntk = [d['ntk'] for d in unique_data]
+all_acc = [d['acc'] for d in unique_data]
 
 # 统计与拟合
 x = np.log10(np.array(all_ntk, dtype=float))
