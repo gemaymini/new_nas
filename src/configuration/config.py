@@ -12,7 +12,7 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE = 50           # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 100                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 500                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
@@ -31,13 +31,13 @@ class Config:
     
     # ==================== 搜索空间参数 ====================
     MIN_UNIT_NUM = 3                # 最小unit数量
-    MAX_UNIT_NUM = 5               # 最大unit数量
+    MAX_UNIT_NUM = 6               # 最大unit数量
     
     MIN_BLOCK_NUM = 2               # 每个unit最小block数量
-    MAX_BLOCK_NUM = 5               # 每个unit最大block数量
+    MAX_BLOCK_NUM = 6               # 每个unit最大block数量
     
-    CHANNEL_OPTIONS = [4, 8, 16, 32, 64] # Removed 512 to prevent OOM
-    GROUP_OPTIONS = [1, 2, 4, 8, 16, 32, 64]
+    CHANNEL_OPTIONS = [32, 64, 128, 256, 512] # Removed 512 to prevent OOM
+    GROUP_OPTIONS = [1, 2, 4, 8, 16, 32]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
@@ -47,7 +47,7 @@ class Config:
     EXPANSION = 2
     
     # 初始卷积层参数
-    INIT_CONV_OUT_CHANNELS = 64    
+    INIT_CONV_OUT_CHANNELS = 64   
     INIT_CONV_KERNEL_SIZE = 3       
     INIT_CONV_STRIDE = 1            
     INIT_CONV_PADDING = 1           
@@ -62,15 +62,15 @@ class Config:
     PROB_MODIFY_BLOCK = 0.8         
     
     # ==================== NTK评估配置 ====================
-    NTK_BATCH_SIZE = 32              
+    NTK_BATCH_SIZE = 64              
     FORCE_CPU_EVAL_THRESHOLD = 100  
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 10000000  # 提高阈值，避免太多模型被跳过
+    NTK_PARAM_THRESHOLD = 15000000  # 提高阈值，避免太多模型被跳过
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
-    BATCH_SIZE = 128                
+    BATCH_SIZE = 256             
     LEARNING_RATE = 0.1             
     MOMENTUM = 0.9                  
     WEIGHT_DECAY = 5e-4             
@@ -101,7 +101,7 @@ class Config:
     
     # ==================== 其他参数 ====================
     RANDOM_SEED = random.randint(0, 2**32 - 1)  
-    NUM_WORKERS = 4                 
+    NUM_WORKERS = 8                 
 
     def get_search_space_summary(self) -> str:
         """获取搜索空间的摘要字符串"""
