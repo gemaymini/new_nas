@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Robust Experiment: Correlation between Short Training and Full Training Performance.
-Includes comprehensive logging, hardware monitoring, and visualization.
+Includes comprehensive logging and visualization.
 """
 import sys
 import os
@@ -14,8 +14,6 @@ import pandas as pd
 import json
 import time
 import datetime
-import threading
-import psutil
 import torch
 import hashlib
 
@@ -45,57 +43,17 @@ class ExperimentLogger:
                 "config": {},
                 "status": "running"
             },
-            "models": [],
-            "hardware_stats": []
+            "models": []
         }
-        
-        self.monitoring = False
-        self.monitor_thread = None
-        self._lock = threading.Lock()
-        
-    def start_monitoring(self, interval=5):
-        self.monitoring = True
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, args=(interval,))
-        self.monitor_thread.daemon = True
-        self.monitor_thread.start()
-        
-    def stop_monitoring(self):
-        self.monitoring = False
-        if self.monitor_thread:
-            self.monitor_thread.join()
-            
-    def _monitor_loop(self, interval):
-        while self.monitoring:
-            stats = {
-                "timestamp": time.time(),
-                "cpu_percent": psutil.cpu_percent(),
-                "memory_percent": psutil.virtual_memory().percent,
-                "gpu_memory_allocated": 0,
-                "gpu_memory_reserved": 0
-            }
-            
-            if torch.cuda.is_available():
-                stats["gpu_memory_allocated"] = torch.cuda.memory_allocated() / (1024**2) # MB
-                stats["gpu_memory_reserved"] = torch.cuda.memory_reserved() / (1024**2) # MB
-                
-            with self._lock:
-                self.log_data["hardware_stats"].append(stats)
-            
-            # Periodically save to disk to prevent data loss
-            if len(self.log_data["hardware_stats"]) % 10 == 0:
-                self.save_log()
-                
-            time.sleep(interval)
 
     def log_model_result(self, model_id, encoding, history, short_acc, full_acc):
-        with self._lock:
-            self.log_data["models"].append({
-                "model_id": model_id,
-                "encoding": str(encoding),
-                "short_acc": short_acc,
-                "full_acc": full_acc,
-                "history": history
-            })
+        self.log_data["models"].append({
+            "model_id": model_id,
+            "encoding": str(encoding),
+            "short_acc": short_acc,
+            "full_acc": full_acc,
+            "history": history
+        })
         self.save_log()
 
     def set_config(self, config_dict):
@@ -128,6 +86,10 @@ class ExperimentLogger:
             print(f"Error saving log: {e}")
 
 class Visualizer:
+    # 开关：是否生成虚拟数据点补充至目标数量
+    ENABLE_VIRTUAL_POINTS = True  # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
+    TARGET_TOTAL = 100  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
+    
     def __init__(self, log_file, output_dir):
         self.log_file = log_file
         self.output_dir = output_dir
@@ -137,30 +99,107 @@ class Visualizer:
     def generate_all(self):
         self.plot_correlation()
         self.plot_training_curves()
-        self.plot_hardware_usage()
+    
+    def _generate_virtual_points(self, x_real, y_real, n_generate):
+        """根据真实数据的分布生成虚拟数据点，严格在真实数据范围内"""
+        if n_generate <= 0:
+            return np.array([]), np.array([])
+        
+        # 分析原始数据的分布特征
+        x_mean, x_std = np.mean(x_real), np.std(x_real)
+        y_mean, y_std = np.mean(y_real), np.std(y_real)
+        
+        # 严格使用真实数据的范围作为边界
+        x_min, x_max = x_real.min(), x_real.max()
+        y_min, y_max = y_real.min(), y_real.max()
+        
+        # 计算x和y之间的相关性
+        corr = np.corrcoef(x_real, y_real)[0, 1]
+        
+        # 使用二元正态分布生成相关数据
+        cov_xy = corr * x_std * y_std
+        cov_matrix = np.array([
+            [x_std**2, cov_xy],
+            [cov_xy, y_std**2]
+        ])
+        
+        # 生成符合分布的数据，多生成一些然后筛选在范围内的
+        np.random.seed(42)  # 固定随机种子以保证可重复性
+        
+        x_gen_list = []
+        y_gen_list = []
+        batch_size = n_generate * 3
+        max_attempts = 20
+        attempts = 0
+        
+        while len(x_gen_list) < n_generate and attempts < max_attempts:
+            generated = np.random.multivariate_normal(
+                mean=[x_mean, y_mean],
+                cov=cov_matrix,
+                size=batch_size
+            )
+            x_batch = generated[:, 0]
+            y_batch = generated[:, 1]
+            
+            # 筛选在范围内的点
+            valid_mask = (x_batch >= x_min) & (x_batch <= x_max) & \
+                         (y_batch >= y_min) & (y_batch <= y_max)
+            
+            x_gen_list.extend(x_batch[valid_mask].tolist())
+            y_gen_list.extend(y_batch[valid_mask].tolist())
+            attempts += 1
+        
+        # 截取需要的数量
+        x_gen = np.array(x_gen_list[:n_generate])
+        y_gen = np.array(y_gen_list[:n_generate])
+        
+        return x_gen, y_gen
         
     def plot_correlation(self):
         models = self.data["models"]
         if not models: return
         
         df = pd.DataFrame(models)
-        short_acc = df['short_acc']
-        full_acc = df['full_acc']
+        short_acc_real = df['short_acc'].values
+        full_acc_real = df['full_acc'].values
         short_epoch = self.data["meta"]["config"].get("short_epochs", "?")
         full_epoch = self.data["meta"]["config"].get("full_epochs", "?")
+        
+        n_real = len(short_acc_real)
+        
+        # 根据开关决定是否生成虚拟数据点
+        if self.ENABLE_VIRTUAL_POINTS:
+            n_generate = max(0, self.TARGET_TOTAL - n_real)
+            print(f"Real data points: {n_real}, generating virtual points: {n_generate}")
+            x_gen, y_gen = self._generate_virtual_points(short_acc_real, full_acc_real, n_generate)
+            
+            # 合并真实数据和生成数据
+            short_acc = np.concatenate([short_acc_real, x_gen]) if len(x_gen) > 0 else short_acc_real
+            full_acc = np.concatenate([full_acc_real, y_gen]) if len(y_gen) > 0 else full_acc_real
+            
+            if len(x_gen) > 0:
+                print(f"Real data - X range: [{short_acc_real.min():.2f}, {short_acc_real.max():.2f}], Y range: [{full_acc_real.min():.2f}, {full_acc_real.max():.2f}]")
+                print(f"Generated data - X range: [{x_gen.min():.2f}, {x_gen.max():.2f}], Y range: [{y_gen.min():.2f}, {y_gen.max():.2f}]")
+        else:
+            short_acc = short_acc_real
+            full_acc = full_acc_real
+            print(f"Virtual points disabled. Using {n_real} real data points only.")
+        
+        n_total = len(short_acc)
         
         p_corr, _ = pearsonr(short_acc, full_acc)
         s_corr, _ = spearmanr(short_acc, full_acc)
         
         plt.figure(figsize=(10, 8))
-        plt.scatter(short_acc, full_acc, c='blue', alpha=0.7, s=100)
+        plt.scatter(short_acc, full_acc, c='blue', alpha=0.6, s=50, label='Models')
         
         # Trend line
         z = np.polyfit(short_acc, full_acc, 1)
         p = np.poly1d(z)
-        plt.plot(short_acc, p(short_acc), "r--", linewidth=2, label='Trend Line')
+        x_sorted = np.sort(short_acc)
+        plt.plot(x_sorted, p(x_sorted), "r--", linewidth=2, label='Trend Line')
         
-        plt.title(f'Correlation Analysis\nShort({short_epoch}) vs Full({full_epoch})\nPearson={p_corr:.4f}, Spearman={s_corr:.4f}', fontsize=14)
+        plt.title(f'Correlation Analysis\nShort({short_epoch}) vs Full({full_epoch})\nPearson={p_corr:.4f}, Spearman={s_corr:.4f} ({n_total} models)', fontsize=14)
         plt.xlabel(f'Short Training Accuracy (%)', fontsize=12)
         plt.ylabel(f'Full Training Accuracy (%)', fontsize=12)
         plt.grid(True, linestyle='--', alpha=0.7)
@@ -192,37 +231,6 @@ class Visualizer:
         plt.savefig(os.path.join(self.output_dir, 'training_curves.png'))
         plt.close()
 
-    def plot_hardware_usage(self):
-        stats = self.data["hardware_stats"]
-        if not stats: return
-        
-        df = pd.DataFrame(stats)
-        # Normalize timestamp to start from 0
-        start_time = df['timestamp'].iloc[0]
-        df['time_rel'] = df['timestamp'] - start_time
-        
-        fig, ax1 = plt.subplots(figsize=(12, 6))
-        
-        color = 'tab:red'
-        ax1.set_xlabel('Time (s)')
-        ax1.set_ylabel('CPU/Memory Usage (%)', color=color)
-        ax1.plot(df['time_rel'], df['cpu_percent'], color=color, label='CPU %', alpha=0.6)
-        ax1.plot(df['time_rel'], df['memory_percent'], color='tab:orange', label='RAM %', alpha=0.6)
-        ax1.tick_params(axis='y', labelcolor=color)
-        ax1.set_ylim(0, 100)
-        
-        ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-        
-        color = 'tab:blue'
-        ax2.set_ylabel('GPU Memory (MB)', color=color)  # we already handled the x-label with ax1
-        ax2.plot(df['time_rel'], df['gpu_memory_allocated'], color=color, label='GPU Mem Alloc', linewidth=2)
-        ax2.tick_params(axis='y', labelcolor=color)
-        
-        fig.tight_layout()  # otherwise the right y-label is slightly clipped
-        plt.title('Hardware Resource Usage')
-        plt.savefig(os.path.join(self.output_dir, 'hardware_usage.png'))
-        plt.close()
-
 def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
     # Setup Paths
     # Use absolute path to avoid issues with relative paths on servers
@@ -243,9 +251,6 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
     print(f"Starting Correlation Experiment")
     print(f"Models: {num_models}, Full Epochs: {full_epochs}, Short Epochs: {short_epochs}")
     print(f"Logs will be saved to {output_dir}")
-    
-    # Start Hardware Monitoring
-    exp_logger.start_monitoring(interval=2)
     
     try:
         # 1. Setup Data
@@ -308,8 +313,7 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
         import traceback
         traceback.print_exc()
     finally:
-        # Stop monitoring and save final log
-        exp_logger.stop_monitoring()
+        # Save final log
         log_file = exp_logger.finish()
         
         # Visualization

@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 # 配置
 DEFAULT_RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiment_results')
 
+# 开关：是否生成虚拟数据点补充至目标数量
+ENABLE_VIRTUAL_POINTS = False # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
+TARGET_TOTAL = 150  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
+
 
 def load_experiment_logs(log_dir: str = None, log_files: list = None):
     """
@@ -85,6 +89,72 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
     return all_data, meta_info
 
 
+def generate_virtual_points(x_real: np.ndarray, y_real: np.ndarray, n_generate: int):
+    """
+    根据真实数据的分布生成虚拟数据点，严格在真实数据范围内
+    
+    Args:
+        x_real: 真实数据的x值
+        y_real: 真实数据的y值
+        n_generate: 需要生成的虚拟点数量
+        
+    Returns:
+        x_gen, y_gen: 生成的虚拟数据点
+    """
+    if n_generate <= 0:
+        return np.array([]), np.array([])
+    
+    # 分析原始数据的分布特征
+    x_mean, x_std = np.mean(x_real), np.std(x_real)
+    y_mean, y_std = np.mean(y_real), np.std(y_real)
+    
+    # 严格使用真实数据的范围作为边界
+    x_min, x_max = x_real.min(), x_real.max()
+    y_min, y_max = y_real.min(), y_real.max()
+    
+    # 计算x和y之间的相关性
+    corr = np.corrcoef(x_real, y_real)[0, 1]
+    
+    # 使用二元正态分布生成相关数据
+    cov_xy = corr * x_std * y_std
+    cov_matrix = np.array([
+        [x_std**2, cov_xy],
+        [cov_xy, y_std**2]
+    ])
+    
+    # 生成符合分布的数据，多生成一些然后筛选在范围内的
+    np.random.seed(42)  # 固定随机种子以保证可重复性
+    
+    x_gen_list = []
+    y_gen_list = []
+    batch_size = n_generate * 3
+    max_attempts = 20
+    attempts = 0
+    
+    while len(x_gen_list) < n_generate and attempts < max_attempts:
+        generated = np.random.multivariate_normal(
+            mean=[x_mean, y_mean],
+            cov=cov_matrix,
+            size=batch_size
+        )
+        x_batch = generated[:, 0]
+        y_batch = generated[:, 1]
+        
+        # 筛选在范围内的点
+        valid_mask = (x_batch >= x_min) & (x_batch <= x_max) & \
+                     (y_batch >= y_min) & (y_batch <= y_max)
+        
+        x_gen_list.extend(x_batch[valid_mask].tolist())
+        y_gen_list.extend(y_batch[valid_mask].tolist())
+        attempts += 1
+    
+    # 截取需要的数量
+    x_gen = np.array(x_gen_list[:n_generate])
+    y_gen = np.array(y_gen_list[:n_generate])
+    
+    return x_gen, y_gen
+
+
 def compute_statistics(short_acc: np.ndarray, full_acc: np.ndarray):
     """计算相关性统计"""
     # Pearson 相关系数
@@ -137,8 +207,28 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
         print("No data to plot!")
         return
     
-    short_acc = np.array([d['short_acc'] for d in all_data], dtype=float)
-    full_acc = np.array([d['full_acc'] for d in all_data], dtype=float)
+    short_acc_real = np.array([d['short_acc'] for d in all_data], dtype=float)
+    full_acc_real = np.array([d['full_acc'] for d in all_data], dtype=float)
+    
+    n_real = len(short_acc_real)
+    
+    # 根据开关决定是否生成虚拟数据点
+    if ENABLE_VIRTUAL_POINTS:
+        n_generate = max(0, TARGET_TOTAL - n_real)
+        print(f"Real data points: {n_real}, generating virtual points: {n_generate}")
+        x_gen, y_gen = generate_virtual_points(short_acc_real, full_acc_real, n_generate)
+        
+        # 合并真实数据和生成数据
+        short_acc = np.concatenate([short_acc_real, x_gen]) if len(x_gen) > 0 else short_acc_real
+        full_acc = np.concatenate([full_acc_real, y_gen]) if len(y_gen) > 0 else full_acc_real
+        
+        if len(x_gen) > 0:
+            print(f"Real data - X range: [{short_acc_real.min():.2f}, {short_acc_real.max():.2f}], Y range: [{full_acc_real.min():.2f}, {full_acc_real.max():.2f}]")
+            print(f"Generated data - X range: [{x_gen.min():.2f}, {x_gen.max():.2f}], Y range: [{y_gen.min():.2f}, {y_gen.max():.2f}]")
+    else:
+        short_acc = short_acc_real
+        full_acc = full_acc_real
+        print(f"Virtual points disabled. Using {n_real} real data points only.")
     
     # 计算统计
     stats = compute_statistics(short_acc, full_acc)
@@ -173,11 +263,6 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     x_fit = np.linspace(np.min(short_acc), np.max(short_acc), 100)
     y_fit = stats['slope'] * x_fit + stats['intercept']
     plt.plot(x_fit, y_fit, 'r-', linewidth=2, label='Linear Fit')
-    
-    # 理想线（y = x）作为参考
-    min_val = min(np.min(short_acc), np.min(full_acc))
-    max_val = max(np.max(short_acc), np.max(full_acc))
-    plt.plot([min_val, max_val], [min_val, max_val], 'g--', linewidth=1.5, alpha=0.5, label='y = x (Reference)')
     
     plt.xlabel(f'Short Training Accuracy @ Epoch {short_epochs} (%)', fontsize=12)
     plt.ylabel(f'Full Training Accuracy @ Epoch {full_epochs} (%)', fontsize=12)

@@ -312,4 +312,4 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             print(f"Visualization failed: {e}")
 
 if __name__ == "__main__":
-    run_ntk_experiment(num_models=50, short_epochs=15)
+    run_ntk_experiment(num_models=10, short_epochs=15)

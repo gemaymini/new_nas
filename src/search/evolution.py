@@ -7,6 +7,8 @@ import os
 import pickle
 import time
 import threading
+import json
+import matplotlib.pyplot as plt
 from collections import deque
 from typing import List, Tuple, Optional
 from copy import deepcopy
@@ -28,6 +30,10 @@ class AgingEvolutionNAS:
         self.population = deque() 
         self.history: List[Individual] = []
         self.lock = threading.Lock()
+        
+        # NTK历史记录，用于绘制NTK曲线
+        # 格式: [(step, individual_id, ntk_value, encoding), ...]
+        self.ntk_history: List[Tuple[int, int, float, list]] = []
         
         self.start_time = time.time()
         
@@ -51,11 +57,18 @@ class AgingEvolutionNAS:
             self.population.append(ind)
             self.history.append(ind)
             
+            # 记录NTK值
+            step = 0  # 初始化阶段step=0
+            self.ntk_history.append((step, ind.id, ind.fitness, ind.encoding.copy()))
+            
             if len(self.population) % 10 == 0:
                 logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
 
         logger.info(f"Population initialized. Size: {len(self.population)}")
         self._record_statistics()
+        
+        # 保存NTK曲线
+        self._save_ntk_history()
 
     def _select_parents(self) -> Tuple[Individual, Individual]:
         """
@@ -126,6 +139,12 @@ class AgingEvolutionNAS:
         # 3. Evaluate (Calculate NTK)
         fitness_evaluator.evaluate_individual(child)
         
+        # 当前step（进化代数）
+        current_step = len(self.history) - len(self.population) + 1
+        
+        # 记录NTK值
+        self.ntk_history.append((current_step, child.id, child.fitness, child.encoding.copy()))
+        
         # 4. Atomic Update
         with self.lock:
             # Remove oldest (head of deque)
@@ -141,6 +160,8 @@ class AgingEvolutionNAS:
         if len(self.history) % 10 == 0:
             logger.info(f"Step {len(self.history)-len(self.population)}/{self.max_gen}: Child Fitness={child.fitness:.4f}")
             self._record_statistics()
+            # 每10步保存一次NTK历史
+            self._save_ntk_history()
 
     def run_search(self):
         """
@@ -163,6 +184,10 @@ class AgingEvolutionNAS:
 
         logger.info("Search completed.")
         self.save_checkpoint()
+        
+        # 搜索结束后绘制NTK曲线
+        self._save_ntk_history()
+        self.plot_ntk_curve()
 
     def run_screening_and_training(self):
         """
@@ -276,6 +301,7 @@ class AgingEvolutionNAS:
         checkpoint = {
             'population': list(self.population), # Convert deque to list for pickling
             'history': self.history,
+            'ntk_history': self.ntk_history,  # 保存NTK历史
         }
         with open(filepath, 'wb') as f:
             pickle.dump(checkpoint, f)
@@ -286,5 +312,140 @@ class AgingEvolutionNAS:
             checkpoint = pickle.load(f)
         self.population = deque(checkpoint['population'])
         self.history = checkpoint['history']
+        # 加载NTK历史（兼容旧checkpoint）
+        self.ntk_history = checkpoint.get('ntk_history', [])
         logger.info(f"Checkpoint loaded from {filepath}")
+    
+    def _save_ntk_history(self, filepath: str = None):
+        """
+        保存NTK历史记录到JSON文件
+        """
+        if not self.ntk_history:
+            return
+            
+        if filepath is None:
+            if not os.path.exists(config.LOG_DIR): 
+                os.makedirs(config.LOG_DIR)
+            filepath = os.path.join(config.LOG_DIR, 'ntk_history.json')
+        
+        # 转换为可序列化格式
+        data = []
+        for step, ind_id, ntk_value, encoding in self.ntk_history:
+            data.append({
+                'step': step,
+                'individual_id': ind_id,
+                'ntk': ntk_value if ntk_value is not None else None,
+                'encoding': encoding
+            })
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        logger.info(f"NTK history saved to {filepath}")
+    
+    def plot_ntk_curve(self, output_path: str = None):
+        """
+        绘制搜索过程中NTK值的变化曲线
+        包括：
+        1. 所有个体的NTK散点图
+        2. 滑动窗口平均NTK曲线
+        3. 当前种群最佳NTK曲线
+        """
+        if not self.ntk_history:
+            logger.warning("No NTK history to plot!")
+            return
+        
+        if output_path is None:
+            if not os.path.exists(config.LOG_DIR):
+                os.makedirs(config.LOG_DIR)
+            output_path = os.path.join(config.LOG_DIR, 'ntk_curve.png')
+        
+        # 提取数据
+        steps = []
+        ntk_values = []
+        for step, ind_id, ntk, encoding in self.ntk_history:
+            if ntk is not None and ntk < 100000:  # 排除无效值
+                steps.append(step)
+                ntk_values.append(ntk)
+        
+        if not steps:
+            logger.warning("No valid NTK values to plot!")
+            return
+        
+        # 创建图形
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        
+        # 1. 所有个体的NTK散点图
+        ax1 = axes[0, 0]
+        ax1.scatter(steps, ntk_values, alpha=0.3, s=10, c='blue')
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('NTK Condition Number')
+        ax1.set_title('All Individuals NTK Values')
+        ax1.grid(True, alpha=0.3)
+        
+        # 2. 滑动窗口平均NTK曲线
+        ax2 = axes[0, 1]
+        window_size = max(10, len(ntk_values) // 50)  # 动态窗口大小
+        if len(ntk_values) >= window_size:
+            moving_avg = []
+            for i in range(len(ntk_values) - window_size + 1):
+                avg = sum(ntk_values[i:i+window_size]) / window_size
+                moving_avg.append(avg)
+            moving_avg_steps = steps[window_size-1:]
+            ax2.plot(moving_avg_steps, moving_avg, 'r-', linewidth=2, label=f'Moving Avg (window={window_size})')
+            ax2.scatter(steps, ntk_values, alpha=0.2, s=5, c='blue', label='Individual NTK')
+            ax2.legend()
+        else:
+            ax2.scatter(steps, ntk_values, alpha=0.5, s=10, c='blue')
+        ax2.set_xlabel('Step')
+        ax2.set_ylabel('NTK Condition Number')
+        ax2.set_title('NTK with Moving Average')
+        ax2.grid(True, alpha=0.3)
+        
+        # 3. 按step分组的最佳NTK曲线
+        ax3 = axes[1, 0]
+        step_best = {}
+        for step, ind_id, ntk, encoding in self.ntk_history:
+            if ntk is not None and ntk < 100000:
+                if step not in step_best or ntk < step_best[step]:
+                    step_best[step] = ntk
+        
+        sorted_steps = sorted(step_best.keys())
+        best_ntks = [step_best[s] for s in sorted_steps]
+        
+        # 累积最佳
+        cumulative_best = []
+        current_best = float('inf')
+        for ntk in best_ntks:
+            current_best = min(current_best, ntk)
+            cumulative_best.append(current_best)
+        
+        ax3.plot(sorted_steps, best_ntks, 'g-', alpha=0.5, label='Best per Step')
+        ax3.plot(sorted_steps, cumulative_best, 'r-', linewidth=2, label='Cumulative Best')
+        ax3.set_xlabel('Step')
+        ax3.set_ylabel('NTK Condition Number')
+        ax3.set_title('Best NTK Progress')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. NTK分布直方图
+        ax4 = axes[1, 1]
+        ax4.hist(ntk_values, bins=50, alpha=0.7, color='blue', edgecolor='black')
+        ax4.axvline(min(ntk_values), color='r', linestyle='--', linewidth=2, label=f'Best: {min(ntk_values):.2f}')
+        ax4.axvline(sum(ntk_values)/len(ntk_values), color='g', linestyle='--', linewidth=2, label=f'Mean: {sum(ntk_values)/len(ntk_values):.2f}')
+        ax4.set_xlabel('NTK Condition Number')
+        ax4.set_ylabel('Count')
+        ax4.set_title('NTK Distribution')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"NTK curve saved to {output_path}")
+        
+        # 打印统计信息
+        logger.info(f"NTK Statistics: Total={len(ntk_values)}, Best={min(ntk_values):.4f}, "
+                   f"Mean={sum(ntk_values)/len(ntk_values):.4f}, Worst={max(ntk_values):.4f}")
+
 
