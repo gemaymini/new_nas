@@ -129,7 +129,7 @@ class NTKEvaluator:
         return cond
 
 
-    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 10) -> float:
+    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
         """计算 NTK 分数，多次运行取平均"""
         try:
             if param_count and param_count > self.param_threshold:

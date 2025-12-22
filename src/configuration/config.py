@@ -63,7 +63,6 @@ class Config:
     
     # ==================== NTK评估配置 ====================
     NTK_BATCH_SIZE = 64              
-    FORCE_CPU_EVAL_THRESHOLD = 100  
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
     NTK_PARAM_THRESHOLD = 15000000  # 提高阈值，避免太多模型被跳过
