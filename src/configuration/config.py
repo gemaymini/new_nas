@@ -11,8 +11,8 @@ class Config:
     """
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 100           # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 5000                  # 最大进化代数 (Total number of individuals to evaluate in search)
+    POPULATION_SIZE = 50           # 种群大小 (Aging Evolution Queue Size)
+    MAX_GEN = 1000                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
@@ -44,7 +44,7 @@ class Config:
     
     # Block扩展参数 (输出通道 = 中间通道 × EXPANSION)
     # EXPANSION=1 时与原模型一致，EXPANSION=2 时类似ResNeXt
-    EXPANSION = 1
+    EXPANSION = 2
     
     # 初始卷积层参数
     INIT_CONV_OUT_CHANNELS = 64    
@@ -66,7 +66,7 @@ class Config:
     FORCE_CPU_EVAL_THRESHOLD = 100  
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 300000000  # 提高阈值，避免太多模型被跳过
+    NTK_PARAM_THRESHOLD = 10000000  # 提高阈值，避免太多模型被跳过
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 

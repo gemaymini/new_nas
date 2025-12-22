@@ -176,8 +176,8 @@ class Visualizer:
         for m in models:
             history = m["history"]
             epochs = [h['epoch'] for h in history]
-            val_acc = [h['val_acc'] for h in history]
-            plt.plot(epochs, val_acc, alpha=0.5, label=f"Model {m['model_id']} (Cond={m['ntk_cond']:.1e})")
+            test_acc = [h['test_acc'] for h in history]
+            plt.plot(epochs, test_acc, alpha=0.5, label=f"Model {m['model_id']} (Cond={m['ntk_cond']:.1e})")
             
         plt.title('Validation Accuracy Curves')
         plt.xlabel('Epoch')
