@@ -75,9 +75,12 @@ class Logger:
         stats_str = ", ".join([f"{k} units: {v}" for k, v in sorted(unit_counts.items())])
         self.info(msg + stats_str)
         
-    def log_evaluation(self, ind_id, eval_type, score):
+    def log_evaluation(self, ind_id, eval_type, score, param_count=None):
         """记录评估结果"""
-        self.debug(f"Eval {ind_id} ({eval_type}): {score}")
+        msg = f"Eval {ind_id} ({eval_type}): {score}"
+        if param_count is not None:
+            msg += f", Params: {param_count}"
+        self.info(msg)
 
     def log_mutation(self, mut_type, old_id, new_id):
         """记录变异操作"""

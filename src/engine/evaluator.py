@@ -176,7 +176,7 @@ class NTKEvaluator:
             del network
             clear_gpu_memory()
 
-            logger.log_evaluation(individual.id, "NTK", fitness)
+            logger.log_evaluation(individual.id, "NTK", fitness, param_count)
             return fitness
 
         except Exception as e:
