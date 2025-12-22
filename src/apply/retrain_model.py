@@ -175,25 +175,109 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         print("Warning: CUDA not available, using CPU")
     print(f"Device: {device}")
     
-    # 进行多次训练
+    # 进行多次训练（支持中断后保存部分结果）
     all_results = []
     best_accs = []
     final_test_accs = []
     
     start_time = datetime.now()
     
-    for run in range(1, num_runs + 1):
-        result = train_once(
-            encoding=encoding,
-            trainloader=trainloader,
-            testloader=testloader,
-            epochs=epochs,
-            run_id=run,
-            device=device
-        )
-        all_results.append(result)
-        best_accs.append(result['best_acc'])
-        final_test_accs.append(result['final_test_acc'])
+    try:
+        for run in range(1, num_runs + 1):
+            result = train_once(
+                encoding=encoding,
+                trainloader=trainloader,
+                testloader=testloader,
+                epochs=epochs,
+                run_id=run,
+                device=device
+            )
+            all_results.append(result)
+            best_accs.append(result['best_acc'])
+            final_test_accs.append(result['final_test_acc'])
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user. Saving partial results...")
+        end_time = datetime.now()
+        total_time = (end_time - start_time).total_seconds()
+        
+        runs_completed = len(all_results)
+        # 安全统计
+        best_acc_mean = np.mean(best_accs) if best_accs else float('nan')
+        best_acc_std = np.std(best_accs) if best_accs else float('nan')
+        final_acc_mean = np.mean(final_test_accs) if final_test_accs else float('nan')
+        final_acc_std = np.std(final_test_accs) if final_test_accs else float('nan')
+        
+        summary = {
+            'status': 'interrupted',
+            'model_path': model_path,
+            'encoding': encoding,
+            'dataset': dataset,
+            'epochs': epochs,
+            'num_runs': num_runs,
+            'runs_completed': runs_completed,
+            'param_count': all_results[0]['param_count'] if all_results else None,
+            'best_acc_mean': best_acc_mean,
+            'best_acc_std': best_acc_std,
+            'final_acc_mean': final_acc_mean,
+            'final_acc_std': final_acc_std,
+            'best_accs': best_accs,
+            'final_test_accs': final_test_accs,
+            'total_time_seconds': total_time,
+            'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S"),
+            'all_results': [{k: v for k, v in r.items() if k != 'history'} for r in all_results]
+        }
+        
+        # 保存结果（强制保存，即使传入了 no-save）
+        result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'retrain_results')
+        os.makedirs(result_dir, exist_ok=True)
+        result_filename = f"retrain_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}_interrupted.json"
+        result_path = os.path.join(result_dir, result_filename)
+        with open(result_path, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        print(f"Partial results saved to: {result_path}")
+        
+        return summary
+    except Exception as e:
+        print(f"\nTraining failed with error: {e}. Saving partial results...")
+        end_time = datetime.now()
+        total_time = (end_time - start_time).total_seconds()
+        
+        runs_completed = len(all_results)
+        best_acc_mean = np.mean(best_accs) if best_accs else float('nan')
+        best_acc_std = np.std(best_accs) if best_accs else float('nan')
+        final_acc_mean = np.mean(final_test_accs) if final_test_accs else float('nan')
+        final_acc_std = np.std(final_test_accs) if final_test_accs else float('nan')
+        
+        summary = {
+            'status': 'error',
+            'error_message': str(e),
+            'model_path': model_path,
+            'encoding': encoding,
+            'dataset': dataset,
+            'epochs': epochs,
+            'num_runs': num_runs,
+            'runs_completed': runs_completed,
+            'param_count': all_results[0]['param_count'] if all_results else None,
+            'best_acc_mean': best_acc_mean,
+            'best_acc_std': best_acc_std,
+            'final_acc_mean': final_acc_mean,
+            'final_acc_std': final_acc_std,
+            'best_accs': best_accs,
+            'final_test_accs': final_test_accs,
+            'total_time_seconds': total_time,
+            'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S"),
+            'all_results': [{k: v for k, v in r.items() if k != 'history'} for r in all_results]
+        }
+        
+        result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'retrain_results')
+        os.makedirs(result_dir, exist_ok=True)
+        result_filename = f"retrain_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}_error.json"
+        result_path = os.path.join(result_dir, result_filename)
+        with open(result_path, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        print(f"Partial results saved to: {result_path}")
+        
+        return summary
     
     end_time = datetime.now()
     total_time = (end_time - start_time).total_seconds()
@@ -203,28 +287,33 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
     print("Training Summary")
     print("="*60)
     
-    best_acc_mean = np.mean(best_accs)
-    best_acc_std = np.std(best_accs)
-    final_acc_mean = np.mean(final_test_accs)
-    final_acc_std = np.std(final_test_accs)
+    best_acc_mean = np.mean(best_accs) if best_accs else float('nan')
+    best_acc_std = np.std(best_accs) if best_accs else float('nan')
+    final_acc_mean = np.mean(final_test_accs) if final_test_accs else float('nan')
+    final_acc_std = np.std(final_test_accs) if final_test_accs else float('nan')
     
     print(f"\nResults over {num_runs} runs:")
     print(f"  Best Test Accuracy:  {best_acc_mean:.2f}% ± {best_acc_std:.2f}%")
     print(f"  Final Test Accuracy: {final_acc_mean:.2f}% ± {final_acc_std:.2f}%")
     print(f"\nIndividual Best Accuracies: {[f'{acc:.2f}%' for acc in best_accs]}")
     print(f"Individual Final Accuracies: {[f'{acc:.2f}%' for acc in final_test_accs]}")
-    print(f"\nMin Best Acc: {min(best_accs):.2f}%, Max Best Acc: {max(best_accs):.2f}%")
+    if best_accs:
+        print(f"\nMin Best Acc: {min(best_accs):.2f}%, Max Best Acc: {max(best_accs):.2f}%")
+    else:
+        print("\nNo runs completed; Min/Max unavailable.")
     print(f"Total training time: {total_time/3600:.2f} hours")
     print(f"Average time per run: {total_time/num_runs/60:.2f} minutes")
     
     # 汇总结果
     summary = {
+        'status': 'completed',
         'model_path': model_path,
         'encoding': encoding,
         'dataset': dataset,
         'epochs': epochs,
         'num_runs': num_runs,
-        'param_count': all_results[0]['param_count'],
+        'runs_completed': len(all_results),
+        'param_count': all_results[0]['param_count'] if all_results else None,
         'best_acc_mean': best_acc_mean,
         'best_acc_std': best_acc_std,
         'final_acc_mean': final_acc_mean,
