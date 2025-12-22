@@ -1,0 +1,124 @@
+# -*- coding: utf-8 -*-
+"""
+批量绘制多个ntk实验日志的NTK条件数与小轮次准确率关系图
+"""
+import os
+import json
+import glob
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 配置
+# RESULTS_DIR = os.path.join(os.path.dirname(__file__), 'ntk_experiment_results')
+RESULTS_DIR = r"C:\Users\gemaymini\Desktop\data__history\ntk"
+SHORT_EPOCH = 15  # 可修改为你想要的小轮次epoch
+SAVE_PATH = os.path.join(RESULTS_DIR, f'ntk_vs_shortacc_scatter_epoch{SHORT_EPOCH}.png')
+
+all_ntk = []
+all_acc = []
+def _rankdata(arr):
+    """Compute average ranks for Spearman correlation (ties get average rank)."""
+    a = np.asarray(arr)
+    sorter = np.argsort(a)
+    ranks = np.empty_like(sorter, dtype=float)
+    ranks[sorter] = np.arange(len(a))
+    # handle ties
+    vals = a[sorter]
+    unique, idx = np.unique(vals, return_index=True)
+    idx = list(idx) + [len(vals)]
+    for i in range(len(idx) - 1):
+        start, end = idx[i], idx[i+1]
+        if end - start > 1:
+            avg = (start + end - 1) / 2.0
+            ranks[sorter[start:end]] = avg
+    return ranks
+
+# 批量读取所有日志文件
+log_files = glob.glob(os.path.join(RESULTS_DIR, 'ntk_experiment_log_*.json'))
+if not log_files:
+    print('No ntk_experiment_log_*.json files found!')
+    exit(1)
+
+for log_path in log_files:
+    with open(log_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    models = data.get('models', [])
+    for m in models:
+        ntk = m.get('ntk_cond', None)
+        model_id = m.get('model_id', None)
+        history = m.get('history', [])
+        # 找到指定epoch的小轮次准确率
+        acc = None
+        for h in history:
+            if h.get('epoch') == SHORT_EPOCH:
+                acc = h.get('test_acc', h.get('val_acc', None))
+                break
+        if ntk is not None and acc is not None:
+            all_ntk.append(ntk)
+            all_acc.append(acc)
+            # 不再记录标签，避免图中过密
+
+if not all_ntk:
+    print('No valid data found!')
+    exit(1)
+
+# 统计与拟合
+x = np.log10(np.array(all_ntk, dtype=float))
+y = np.array(all_acc, dtype=float)
+
+# 线性回归拟合 y = a x + b
+a, b = np.polyfit(x, y, 1)
+y_fit = a * x + b
+
+# R^2
+ss_res = np.sum((y - y_fit) ** 2)
+ss_tot = np.sum((y - np.mean(y)) ** 2)
+r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
+
+# Pearson
+pearson_r = float(np.corrcoef(x, y)[0, 1])
+
+# Spearman（基于平均秩）
+rx = _rankdata(x)
+ry = _rankdata(y)
+spearman_rho = float(np.corrcoef(rx, ry)[0, 1])
+
+# 其他统计
+n = len(x)
+y_mean = float(np.mean(y))
+y_std = float(np.std(y))
+y_min = float(np.min(y))
+y_max = float(np.max(y))
+
+print("=== NTK vs Short Acc Stats ===")
+print(f"Samples: {n}, Epoch: {SHORT_EPOCH}")
+print(f"Pearson r: {pearson_r:.4f}")
+print(f"Spearman rho: {spearman_rho:.4f}")
+print(f"Linear Fit: y = {a:.4f} x + {b:.4f}, R^2 = {r2:.4f}")
+print(f"Acc Mean: {y_mean:.2f}%, Std: {y_std:.2f}%, Min: {y_min:.2f}%, Max: {y_max:.2f}%")
+
+# 绘图（无点标签，带拟合线与统计框）
+plt.figure(figsize=(10,7))
+plt.scatter(x, y, c='royalblue', alpha=0.6, edgecolors='none', label='Models')
+plt.plot(np.sort(x), a * np.sort(x) + b, color='crimson', linewidth=2.0, label='Linear fit')
+
+plt.xlabel('log10(NTK Condition Number)')
+plt.ylabel(f'Short Training Accuracy @ Epoch {SHORT_EPOCH} (%)')
+plt.title(f'NTK Condition vs Short Training Accuracy\n(Epoch {SHORT_EPOCH}, {n} models)')
+plt.grid(True, linestyle='--', alpha=0.4)
+plt.legend(loc='lower left')
+
+# 统计文本框
+text = (
+    f"Pearson r: {pearson_r:.3f}\n"
+    f"Spearman rho: {spearman_rho:.3f}\n"
+    f"Fit: y = {a:.3f} x + {b:.3f}\nR^2 = {r2:.3f}\n"
+    f"Mean={y_mean:.2f}%, Std={y_std:.2f}%\nMin={y_min:.2f}%, Max={y_max:.2f}%"
+)
+plt.gcf().text(0.985, 0.02, text, fontsize=10, va='bottom', ha='right', 
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
+
+plt.tight_layout()
+plt.savefig(SAVE_PATH)
+print(f'Plot saved to {SAVE_PATH}')
+plt.show()
