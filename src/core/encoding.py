@@ -179,11 +179,23 @@ class Encoder:
     @staticmethod
     def print_architecture(encoding: List[int]):
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
+        
+        # 尝试计算参数量
+        param_count_str = "N/A"
+        try:
+            # 延迟导入以避免循环依赖
+            from models.network import NetworkBuilder
+            param_count = NetworkBuilder.calculate_param_count(encoding)
+            param_count_str = f"{param_count:,}"
+        except Exception as e:
+            param_count_str = f"Error calculating params: {e}"
+
         print(f"\n{'='*60}")
         print(f"Network Architecture")
         print(f"{'='*60}")
         print(f"Number of Units: {unit_num}")
         print(f"Blocks per Unit: {block_nums}")
+        print(f"Total Parameters: {param_count_str}")
         print(f"{'-'*60}")
         for i, unit_blocks in enumerate(block_params_list):
             print(f"\nUnit {i+1} ({len(unit_blocks)} blocks):")
