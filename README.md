@@ -2,65 +2,73 @@
 
 ## 项目概述
 
-本项目实现了一个基于**老化进化算法 (Aging Evolution)** 的神经网络架构搜索系统。该系统通过进化算法自动搜索最优的卷积神经网络架构，使用 **NTK (Neural Tangent Kernel)** 条件数作为快速评估指标（无需完整训练），最终对候选架构进行完整训练以获得高性能模型。
+本项目实现了一个基于**老化进化算法 (Aging Evolution)** 的神经网络架构搜索系统。该系统通过进化算法自动搜索最优的卷积神经网络架构，使用 **NTK (Neural Tangent Kernel)** 条件数作为零成本代理指标进行快速评估（无需完整训练），结合多阶段筛选策略最终对候选架构进行完整训练以获得高性能模型。
 
 ### 主要特点
 
-- 🧬 **老化进化算法**：使用 FIFO 队列实现种群管理，自动淘汰老化个体
-- 🔬 **NTK 零成本代理**：基于 NTK 条件数快速评估网络可训练性，无需实际训练
-- 🏗️ **灵活的搜索空间**：支持可变数量的 Unit 和 Block，包含 SENet 注意力机制
-- 📊 **多阶段筛选**：先 NTK 筛选 → 短期训练验证 → 完整训练最优模型
+- 🧬 **老化进化算法**：使用 FIFO 队列实现种群管理，自动淘汰老化个体，保持种群多样性
+- 🔬 **NTK 零成本代理**：基于 NTK 条件数快速评估网络可训练性，无需实际训练即可筛选候选架构
+- 🏗️ **灵活的搜索空间**：支持可变数量的 Unit (3-6) 和 Block (2-6)，包含 SENet 注意力机制和分组卷积
+- 📊 **多阶段筛选**：NTK 筛选 Top-N1 → 短期训练验证 → 完整训练最优模型
 - 💾 **断点续训**：支持保存和加载 checkpoint，可中断后继续搜索
+- 📈 **实验分析工具**：提供 NTK 相关性分析、训练曲线绘制等实验脚本
 
 ---
 
 ## 项目结构
 
 ```
-nas/
-├── main.py                    # 主程序入口
-├── train_topk.py              # 从 checkpoint 训练 Top-K 模型
-├── continue_train.py          # 继续训练已有模型
+new_nas/
+├── README.md                  # 项目说明文档
 ├── requirements.txt           # 依赖包列表
 │
 ├── src/                       # 源代码目录
+│   ├── main.py                # 主程序入口
+│   │
 │   ├── configuration/         # 配置模块
 │   │   └── config.py          # 超参数配置
 │   │
 │   ├── core/                  # 核心模块
-│   │   ├── encoding.py        # 编码器与个体类
-│   │   └── search_space.py    # 搜索空间定义
+│   │   ├── encoding.py        # 编码器与个体类 (BlockParams, Individual, Encoder)
+│   │   └── search_space.py    # 搜索空间定义与种群初始化
 │   │
 │   ├── data/                  # 数据模块
-│   │   └── dataset.py         # 数据集加载器
+│   │   └── dataset.py         # 数据集加载器 (CIFAR-10/100)
 │   │
 │   ├── engine/                # 引擎模块
 │   │   ├── evaluator.py       # NTK 评估器 & 最终评估器
 │   │   └── trainer.py         # 网络训练器
 │   │
 │   ├── models/                # 模型模块
-│   │   └── network.py         # 网络构建器
+│   │   └── network.py         # 网络构建器 (SEBlock, ConvUnit, RegBlock, RegUnit)
 │   │
 │   ├── search/                # 搜索模块
-│   │   ├── evolution.py       # 老化进化算法
+│   │   ├── evolution.py       # 老化进化算法主逻辑
 │   │   └── mutation.py        # 变异/交叉/选择算子
 │   │
-│   └── utils/                 # 工具模块
-│       └── logger.py          # 日志记录器
-│
-├── apply/                     # 应用脚本
-│   ├── predict.py             # 模型推理
-│   └── inspect_model.py       # 查看模型架构
+│   ├── utils/                 # 工具模块
+│   │   └── logger.py          # 日志记录器
+│   │
+│   └── apply/                 # 应用与实验脚本
+│       ├── predict.py                    # 模型推理
+│       ├── inspect_model.py              # 查看模型架构
+│       ├── continue_train.py             # 继续训练已有模型
+│       ├── retrain_model.py              # 重新训练模型
+│       ├── correlation_experiment.py     # 短训练与完整训练相关性实验
+│       ├── ntk_correlation_experiment.py # NTK 与准确率相关性实验
+│       ├── plot_ntk_curve.py             # 绘制 NTK 曲线
+│       ├── plot_ntk_vs_shortacc.py       # NTK vs 短训练准确率
+│       └── plot_short_vs_full.py         # 短训练 vs 完整训练准确率
 │
 ├── checkpoints/               # 保存的 checkpoint
 │   └── final_models/          # 最终训练的模型
 │
 ├── data/                      # 数据集目录
-│   └── cifar-10-batches-py/   # CIFAR-10 数据
+│   ├── cifar-10-batches-py/   # CIFAR-10 数据
+│   └── cifar-100-python/      # CIFAR-100 数据
 │
 ├── logs/                      # 日志目录
-├── runs/                      # TensorBoard 日志
-└── test/                      # 测试脚本
+└── runs/                      # TensorBoard 日志
 ```
 
 ---
@@ -91,6 +99,7 @@ matplotlib>=3.4.0
 psutil>=5.8.0
 tensorboard>=2.6.0
 tqdm>=4.60.0
+nvitop>=0.1.6
 ```
 
 ---
@@ -100,38 +109,51 @@ tqdm>=4.60.0
 ### 1. 运行架构搜索
 
 ```bash
-# 默认参数运行
+# 进入 src 目录
+cd src
+
+# 默认参数运行 (CIFAR-10)
 python main.py
 
 # 自定义参数
-python main.py --population_size 100 --max_gen 5000 --seed 42
+python main.py --population_size 50 --max_gen 500 --seed 42
 
-# 测试模式（快速运行，验证代码）
-python main.py --test
+# 使用 CIFAR-100 数据集
+python main.py --dataset cifar100
+
+# 从 checkpoint 恢复搜索
+python main.py --resume ../checkpoints/checkpoint_step100.pkl
 ```
 
-### 2. 从 Checkpoint 训练 Top-K 模型
+### 2. 继续训练已有模型
 
 ```bash
-python train_topk.py checkpoints/checkpoint_step1000.pkl --top_k 5 --epochs 300
+python apply/continue_train.py ../checkpoints/final_models/model_xxx.pth --epochs 100 --lr 0.01
 ```
 
-### 3. 继续训练已有模型
+### 3. 模型推理
 
 ```bash
-python continue_train.py checkpoints/final_models/model_xxx.pth --epochs 100 --lr 0.01
+python apply/predict.py ../checkpoints/final_models/model_xxx.pth path/to/image.jpg
 ```
 
-### 4. 模型推理
+### 4. 查看模型架构
 
 ```bash
-python apply/predict.py checkpoints/final_models/model_xxx.pth path/to/image.jpg
+python apply/inspect_model.py ../checkpoints/final_models/model_xxx.pth
 ```
 
-### 5. 查看模型架构
+### 5. 实验分析
 
 ```bash
-python apply/inspect_model.py checkpoints/final_models/model_xxx.pth
+# NTK 相关性实验
+python apply/ntk_correlation_experiment.py
+
+# 短训练 vs 完整训练相关性分析
+python apply/correlation_experiment.py
+
+# 绘制 NTK 曲线
+python apply/plot_ntk_curve.py
 ```
 
 ---
@@ -170,15 +192,16 @@ Algorithm: Aging Evolution
 
 ### 搜索空间
 
-| 参数 | 范围 |
-|------|------|
-| Unit 数量 | 3-5 |
-| 每 Unit Block 数量 | 2-5 |
-| 通道数 | [4, 8, 16, 32, 64] |
-| 分组数 | [1, 2, 4, 8, 16, 32, 64] |
-| 池化类型 | [MaxPool, AvgPool] |
-| 池化步长 | [1, 2] |
-| SENet | [是, 否] |
+| 参数 | 范围 | 说明 |
+|------|------|------|
+| Unit 数量 | 3-6 | 网络深度层级 |
+| 每 Unit Block 数量 | 2-6 | 每个层级的残差块数量 |
+| 通道数 | [32, 64, 128, 256, 512] | 中间层通道数 |
+| 分组数 | [1, 2, 4, 8, 16, 32] | 分组卷积的组数 |
+| 池化类型 | [MaxPool, AvgPool] | 下采样方式 |
+| 池化步长 | [1, 2] | 空间分辨率变化 |
+| SENet | [是, 否] | 是否使用注意力机制 |
+| 通道扩展系数 | 2 | 输出通道 = 中间通道 × 2 |
 
 ---
 
@@ -190,9 +213,10 @@ Algorithm: Aging Evolution
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `POPULATION_SIZE` | 100 | 种群大小 (队列容量) |
-| `MAX_GEN` | 5000 | 总评估个体数 |
+| `POPULATION_SIZE` | 50 | 种群大小 (队列容量) |
+| `MAX_GEN` | 500 | 总进化代数 |
 | `TOURNAMENT_SIZE` | 5 | 锦标赛选择样本数 |
+| `TOURNAMENT_WINNERS` | 2 | 锦标赛选择胜者数量 |
 | `PROB_CROSSOVER` | 0.5 | 交叉概率 |
 | `PROB_MUTATION` | 0.5 | 变异概率 |
 
@@ -200,19 +224,26 @@ Algorithm: Aging Evolution
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `HISTORY_TOP_N1` | 20 | 第一轮 NTK 筛选数量 |
+| `HISTORY_TOP_N1` | 10 | 第一轮 NTK 筛选数量 |
 | `SHORT_TRAIN_EPOCHS` | 20 | 短期训练轮数 |
-| `HISTORY_TOP_N2` | 5 | 第二轮筛选数量 |
+| `HISTORY_TOP_N2` | 1 | 第二轮筛选数量 |
 | `FULL_TRAIN_EPOCHS` | 300 | 完整训练轮数 |
 
 ### 训练参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `BATCH_SIZE` | 128 | 批次大小 |
+| `BATCH_SIZE` | 256 | 批次大小 |
 | `LEARNING_RATE` | 0.1 | 初始学习率 |
 | `MOMENTUM` | 0.9 | SGD 动量 |
 | `WEIGHT_DECAY` | 5e-4 | 权重衰减 |
+
+### NTK 评估参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `NTK_BATCH_SIZE` | 64 | NTK 计算批次大小 |
+| `NTK_PARAM_THRESHOLD` | 15000000 | 参数量阈值（超过跳过NTK计算） |
 
 ---
 
@@ -221,16 +252,38 @@ Algorithm: Aging Evolution
 ### 基本组件
 
 1. **ConvUnit**: 初始卷积层 (Conv-BN-ReLU)
-2. **RegBlock**: 类 ResNet 残差块
+2. **RegBlock**: 类 ResNet/ResNeXt 残差块
    - 1x1 Conv → 3x3 GroupConv → Pool → 1x1 Conv + Shortcut
+   - 输出通道 = 中间通道 × EXPANSION (默认2)
    - 可选 SENet 注意力模块
-3. **RegUnit**: 由多个 RegBlock 组成
+3. **RegUnit**: 由多个 RegBlock 组成的网络层级
 4. **SearchedNetwork**: 完整的搜索出的网络
 
 ### 网络流程
 
 ```
-Input → ConvUnit → RegUnit_1 → ... → RegUnit_N → GlobalAvgPool → FC → Output
+Input (3×32×32)
+    │
+    ▼
+ConvUnit (3 → 64 channels)
+    │
+    ▼
+RegUnit_1 (多个 RegBlock)
+    │
+    ▼
+RegUnit_2 (多个 RegBlock)
+    │
+    ▼
+   ...
+    │
+    ▼
+RegUnit_N (多个 RegBlock)
+    │
+    ▼
+GlobalAvgPool
+    │
+    ▼
+FC → Output (10/100 classes)
 ```
 
 ---
@@ -241,8 +294,9 @@ Input → ConvUnit → RegUnit_1 → ... → RegUnit_N → GlobalAvgPool → FC 
 
 ```python
 {
-    'population': [...],  # 当前种群
-    'history': [...],     # 历史所有个体
+    'population': [...],      # 当前种群 (deque)
+    'history': [...],         # 历史所有个体
+    'ntk_history': [...],     # NTK 历史记录 [(step, id, ntk_value, encoding), ...]
 }
 ```
 
@@ -250,56 +304,33 @@ Input → ConvUnit → RegUnit_1 → ... → RegUnit_N → GlobalAvgPool → FC 
 
 ```python
 {
-    'state_dict': ...,    # 模型权重
-    'encoding': [...],    # 架构编码
-    'accuracy': float,    # 验证集准确率
-    'param_count': int,   # 参数量
-    'history': [...],     # 训练历史
+    'state_dict': ...,        # 模型权重
+    'encoding': [...],        # 架构编码
+    'accuracy': float,        # 验证集准确率
+    'param_count': int,       # 参数量
+    'history': [...],         # 训练历史
 }
 ```
 
+### NTK 历史文件 (`ntk_history.json`)
+
+搜索过程中的 NTK 条件数记录，用于分析和可视化。
+
 ---
 
-## 测试
-
-### 运行所有测试
+## 命令行参数
 
 ```bash
-# 从项目根目录运行
-cd c:\Users\gemaymini\Desktop\nas
-python test\run_tests.py
+python main.py [OPTIONS]
+
+参数说明:
+  --population_size INT   种群大小 (默认: 50)
+  --max_gen INT           最大进化代数 (默认: 500)
+  --dataset STR           数据集 cifar10/cifar100 (默认: cifar10)
+  --seed INT              随机种子 (默认: 42)
+  --resume PATH           从 checkpoint 恢复搜索
+  --no_final_eval         跳过最终评估阶段
 ```
-
-### 运行特定测试模块
-
-```bash
-# 运行编码模块测试
-python test\test_encoding.py
-
-# 运行网络模块测试
-python test\test_network.py
-```
-
-### 列出所有测试模块
-
-```bash
-python test\run_tests.py --list
-```
-
-### 测试覆盖模块
-
-| 测试文件 | 覆盖模块 |
-|----------|----------|
-| test_config.py | 配置模块 (Config) |
-| test_encoding.py | 编码模块 (BlockParams, Individual, Encoder) |
-| test_search_space.py | 搜索空间模块 (SearchSpace, PopulationInitializer) |
-| test_network.py | 网络构建模块 (SEBlock, ConvUnit, RegBlock, RegUnit, SearchedNetwork, NetworkBuilder) |
-| test_mutation.py | 变异算子模块 (MutationOperator, SelectionOperator, CrossoverOperator) |
-| test_dataset.py | 数据集模块 (DatasetLoader) |
-| test_trainer.py | 训练器模块 (NetworkTrainer) |
-| test_evaluator.py | 评估器模块 (NTKEvaluator, FitnessEvaluator) |
-| test_logger.py | 日志模块 (Logger, TBLogger, FailedLogger) |
-| test_evolution.py | 进化算法模块 (AgingEvolutionNAS) |
 
 ---
 
@@ -310,9 +341,10 @@ tensorboard --logdir=runs
 ```
 
 可查看:
-- 每代最佳/平均 fitness
+- 每代最佳/平均 fitness (NTK 条件数)
 - 种群大小变化
 - Unit 数量分布
+- 训练损失和准确率曲线
 
 ---
 
@@ -320,11 +352,20 @@ tensorboard --logdir=runs
 
 基于 CIFAR-10 数据集的搜索结果:
 
-| 模型 | 参数量 | 准确率 |
-|------|--------|--------|
-| model_3741 | - | 88.54% |
-| model_2776 | - | 85.97% |
-| model_3826 | - | 86.90% |
+| 模型 | 准确率 |
+|------|--------|
+| model_3741 | 88.54% |
+| model_3826 | 86.90% |
+| model_2776 | 85.97% |
+
+---
+
+## 支持的数据集
+
+| 数据集 | 类别数 | 图像大小 |
+|--------|--------|----------|
+| CIFAR-10 | 10 | 32×32 |
+| CIFAR-100 | 100 | 32×32 |
 
 ---
 
@@ -339,3 +380,4 @@ MIT License
 1. Real, E., et al. "Regularized Evolution for Image Classifier Architecture Search." AAAI 2019.
 2. Jacot, A., et al. "Neural Tangent Kernel: Convergence and Generalization in Neural Networks." NeurIPS 2018.
 3. Chen, W., et al. "Neural Architecture Search on ImageNet in Four GPU Hours: A Theoretically Inspired Perspective." ICLR 2021.
+4. Hu, J., et al. "Squeeze-and-Excitation Networks." CVPR 2018.
