@@ -87,6 +87,10 @@ class NetworkTrainer:
         if momentum is None: momentum = config.MOMENTUM
         if weight_decay is None: weight_decay = config.WEIGHT_DECAY
         
+        # Clear cache before training
+        if self.device == 'cuda':
+            torch.cuda.empty_cache()
+
         model = model.to(self.device)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(model.parameters(), lr=lr, 
@@ -97,28 +101,39 @@ class NetworkTrainer:
         best_acc = 0.0
         best_model_wts = copy.deepcopy(model.state_dict())
         
-        for epoch in range(1, epochs + 1):
-            train_loss, train_acc = self.train_one_epoch(
-                model, trainloader, criterion, optimizer, epoch, epochs
-            )
-            test_loss, test_acc = self.evaluate(model, testloader, criterion)
-            scheduler.step()
-            
-            history.append({
-                'epoch': epoch,
-                'train_loss': train_loss,
-                'train_acc': train_acc,
-                'test_loss': test_loss,
-                'test_acc': test_acc,
-                'lr': optimizer.param_groups[0]['lr']
-            })
-            
-            if test_acc > best_acc:
-                best_acc = test_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-            
-            print(f'  [Epoch {epoch}/{epochs}] Train Acc: {train_acc:.2f}% | '
-                  f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%')
-            
+        try:
+            for epoch in range(1, epochs + 1):
+                train_loss, train_acc = self.train_one_epoch(
+                    model, trainloader, criterion, optimizer, epoch, epochs
+                )
+                test_loss, test_acc = self.evaluate(model, testloader, criterion)
+                scheduler.step()
+                
+                history.append({
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    'train_acc': train_acc,
+                    'test_loss': test_loss,
+                    'test_acc': test_acc,
+                    'lr': optimizer.param_groups[0]['lr']
+                })
+                
+                if test_acc > best_acc:
+                    best_acc = test_acc
+                    best_model_wts = copy.deepcopy(model.state_dict())
+                
+                print(f'  [Epoch {epoch}/{epochs}] Train Acc: {train_acc:.2f}% | '
+                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%')
+                      
+        except RuntimeError as e:
+            if 'out of memory' in str(e):
+                logger.error("OOM during training. Clearing cache.")
+                if self.device == 'cuda':
+                    torch.cuda.empty_cache()
+            raise e
+        finally:
+            if self.device == 'cuda':
+                torch.cuda.empty_cache()
+                
         model.load_state_dict(best_model_wts)
         return best_acc, history
