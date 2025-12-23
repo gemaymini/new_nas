@@ -4,6 +4,7 @@
 负责数据集的下载、预处理和加载
 """
 import torch
+import os
 from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
@@ -32,13 +33,18 @@ class DatasetLoader:
                                (0.2023, 0.1994, 0.2010)),
         ])
         
+        root = './data'
+        download = True
+        if os.path.exists(os.path.join(root, 'cifar-10-batches-py')):
+            download = False
+            
         trainset = torchvision.datasets.CIFAR10(
-            root='./data', train=True, download=True, transform=transform_train)
+            root=root, train=True, download=download, transform=transform_train)
         trainloader = DataLoader(
             trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         
         testset = torchvision.datasets.CIFAR10(
-            root='./data', train=False, download=True, transform=transform_test)
+            root=root, train=False, download=download, transform=transform_test)
         testloader = DataLoader(
             testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
@@ -50,22 +56,32 @@ class DatasetLoader:
         获取用于NTK计算的DataLoader
         通常使用较小的batch_size，且不进行数据增强
         """
+        root = './data'
+        
         if dataset_name == 'cifar10':
             transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), 
                                    (0.2023, 0.1994, 0.2010)),
             ])
+            download = True
+            if os.path.exists(os.path.join(root, 'cifar-10-batches-py')):
+                download = False
+                
             dataset = torchvision.datasets.CIFAR10(
-                root='./data', train=True, download=True, transform=transform)
+                root=root, train=True, download=download, transform=transform)
         elif dataset_name == 'cifar100':
             transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.5071, 0.4867, 0.4408), 
                                    (0.2675, 0.2565, 0.2761)),
             ])
+            download = True
+            if os.path.exists(os.path.join(root, 'cifar-100-python')):
+                download = False
+                
             dataset = torchvision.datasets.CIFAR100(
-                root='./data', train=True, download=True, transform=transform)
+                root=root, train=True, download=download, transform=transform)
         else:
             raise ValueError(f"Unknown dataset: {dataset_name}")
             
@@ -93,13 +109,18 @@ class DatasetLoader:
                                (0.2675, 0.2565, 0.2761)),
         ])
         
+        root = './data'
+        download = True
+        if os.path.exists(os.path.join(root, 'cifar-100-python')):
+            download = False
+            
         trainset = torchvision.datasets.CIFAR100(
-            root='./data', train=True, download=True, transform=transform_train)
+            root=root, train=True, download=download, transform=transform_train)
         trainloader = DataLoader(
             trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         
         testset = torchvision.datasets.CIFAR100(
-            root='./data', train=False, download=True, transform=transform_test)
+            root=root, train=False, download=download, transform=transform_test)
         testloader = DataLoader(
             testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
