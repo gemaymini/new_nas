@@ -36,8 +36,8 @@ class Config:
     MIN_BLOCK_NUM = 2               # 每个unit最小block数量
     MAX_BLOCK_NUM = 6               # 每个unit最大block数量
     
-    CHANNEL_OPTIONS = [16,32, 64, 128, 256, 512] # Removed 512 to prevent OOM
-    GROUP_OPTIONS = [1, 2, 4, 8, 16, 32]
+    CHANNEL_OPTIONS = [16,32, 64, 128, 256] # Removed 512 to prevent OOM
+    GROUP_OPTIONS = [1, 2, 4, 8, 16]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
