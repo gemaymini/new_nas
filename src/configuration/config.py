@@ -12,15 +12,15 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE = 50           # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 500                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 1000                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
     # ==================== 筛选与训练流程参数 ====================
-    HISTORY_TOP_N1 = 10             # 第一轮筛选：基于NTK选择Top N1
-    SHORT_TRAIN_EPOCHS = 20         # 第一轮筛选：短期训练轮数
+    HISTORY_TOP_N1 = 20             # 第一轮筛选：基于NTK选择Top N1
+    SHORT_TRAIN_EPOCHS = 50         # 第一轮筛选：短期训练轮数
     
-    HISTORY_TOP_N2 = 1              # 第二轮筛选：基于验证集Acc选择Top N2
+    HISTORY_TOP_N2 = 3              # 第二轮筛选：基于验证集Acc选择Top N2
     FULL_TRAIN_EPOCHS = 300         # 最终训练：完整训练轮数
     
     # ==================== 交叉算子参数 ====================
@@ -36,7 +36,7 @@ class Config:
     MIN_BLOCK_NUM = 2               # 每个unit最小block数量
     MAX_BLOCK_NUM = 6               # 每个unit最大block数量
     
-    CHANNEL_OPTIONS = [32, 64, 128, 256, 512] # Removed 512 to prevent OOM
+    CHANNEL_OPTIONS = [16,32, 64, 128, 256, 512] # Removed 512 to prevent OOM
     GROUP_OPTIONS = [1, 2, 4, 8, 16, 32]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
@@ -65,7 +65,7 @@ class Config:
     NTK_BATCH_SIZE = 64              
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 15000000  # 提高阈值，避免太多模型被跳过
+    NTK_PARAM_THRESHOLD = 5,000,000  # 提高阈值，避免太多模型被跳过
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
