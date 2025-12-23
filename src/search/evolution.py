@@ -37,6 +37,12 @@ class AgingEvolutionNAS:
         
         self.start_time = time.time()
         
+        # 时间记录
+        self.search_time = 0.0  # 搜索阶段时间（秒）
+        self.short_train_time = 0.0  # 短轮次训练时间（秒）
+        self.full_train_time = 0.0  # 完整训练时间（秒）
+        self.time_stats: dict = {}  # 详细时间统计
+        
         self._log_search_space_info()
 
     def _log_search_space_info(self):
@@ -168,6 +174,7 @@ class AgingEvolutionNAS:
         Main loop for Aging Evolution Search.
         """
         logger.info(f"Starting Aging Evolution Search for {self.max_gen} steps...")
+        search_start_time = time.time()
         
         if not self.population:
             self.initialize_population()
@@ -182,7 +189,9 @@ class AgingEvolutionNAS:
             if (len(self.history) - len(self.population)) % 100 == 0:
                 self.save_checkpoint()
 
-        logger.info("Search completed.")
+        # 记录搜索阶段时间
+        self.search_time = time.time() - search_start_time
+        logger.info(f"Search completed. Search time: {self._format_time(self.search_time)}")
         self.save_checkpoint()
         
         # 搜索结束后绘制NTK曲线
@@ -216,6 +225,7 @@ class AgingEvolutionNAS:
         
         # 2. Short Training (Top N1 -> Val Acc)
         logger.info(f"Starting Short Training ({config.SHORT_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N1}...")
+        short_train_start_time = time.time()
         
         # We use FinalEvaluator but with fewer epochs
         # Note: FinalEvaluator usually saves models. We might want to disable saving for short train or overwrite.
@@ -231,6 +241,10 @@ class AgingEvolutionNAS:
             acc, _ = evaluator.evaluate_individual(ind, epochs=config.SHORT_TRAIN_EPOCHS)
             ind.quick_score = acc # Store for sorting
             short_results.append(ind)
+        
+        # 记录短轮次训练时间
+        self.short_train_time = time.time() - short_train_start_time
+        logger.info(f"Short Training completed. Time: {self._format_time(self.short_train_time)}")
             
         # 3. Select Top N2 (by Val Acc)
         short_results.sort(key=lambda x: x.quick_score if x.quick_score else float('-inf'), reverse=True)
@@ -239,6 +253,7 @@ class AgingEvolutionNAS:
         
         # 4. Full Training (Top N2 -> Final Model)
         logger.info(f"Starting Full Training ({config.FULL_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N2}...")
+        full_train_start_time = time.time()
         
         final_results = []
         best_final_ind = None
@@ -256,6 +271,13 @@ class AgingEvolutionNAS:
                 best_final_ind = ind
                 
             final_results.append(result)
+        
+        # 记录完整训练时间
+        self.full_train_time = time.time() - full_train_start_time
+        logger.info(f"Full Training completed. Time: {self._format_time(self.full_train_time)}")
+        
+        # 保存时间统计并打印总结
+        self._save_time_stats()
             
         logger.info(f"Best Final Model: ID={best_final_ind.id}, Acc={best_final_acc:.2f}%")
         return best_final_ind
@@ -302,6 +324,9 @@ class AgingEvolutionNAS:
             'population': list(self.population), # Convert deque to list for pickling
             'history': self.history,
             'ntk_history': self.ntk_history,  # 保存NTK历史
+            'search_time': self.search_time,  # 搜索时间
+            'short_train_time': self.short_train_time,  # 短轮次训练时间
+            'full_train_time': self.full_train_time,  # 完整训练时间
         }
         with open(filepath, 'wb') as f:
             pickle.dump(checkpoint, f)
@@ -314,6 +339,10 @@ class AgingEvolutionNAS:
         self.history = checkpoint['history']
         # 加载NTK历史（兼容旧checkpoint）
         self.ntk_history = checkpoint.get('ntk_history', [])
+        # 加载时间统计（兼容旧checkpoint）
+        self.search_time = checkpoint.get('search_time', 0.0)
+        self.short_train_time = checkpoint.get('short_train_time', 0.0)
+        self.full_train_time = checkpoint.get('full_train_time', 0.0)
         logger.info(f"Checkpoint loaded from {filepath}")
     
     def _save_ntk_history(self, filepath: str = None):
@@ -448,4 +477,66 @@ class AgingEvolutionNAS:
         logger.info(f"NTK Statistics: Total={len(ntk_values)}, Best={min(ntk_values):.4f}, "
                    f"Mean={sum(ntk_values)/len(ntk_values):.4f}, Worst={max(ntk_values):.4f}")
 
+    def _format_time(self, seconds: float) -> str:
+        """
+        将秒数格式化为可读的时间字符串
+        """
+        if seconds < 60:
+            return f"{seconds:.2f}s"
+        elif seconds < 3600:
+            minutes = seconds / 60
+            return f"{minutes:.2f}min ({seconds:.0f}s)"
+        else:
+            hours = seconds / 3600
+            minutes = (seconds % 3600) / 60
+            return f"{hours:.2f}h ({minutes:.0f}min)"
 
+    def _save_time_stats(self, filepath: str = None):
+        """
+        保存时间统计到JSON文件并打印总结
+        """
+        total_time = self.search_time + self.short_train_time + self.full_train_time
+        
+        self.time_stats = {
+            'search_phase': {
+                'time_seconds': self.search_time,
+                'time_formatted': self._format_time(self.search_time),
+                'description': f'搜索阶段 (NTK评估 {self.max_gen} 个个体)'
+            },
+            'short_training_phase': {
+                'time_seconds': self.short_train_time,
+                'time_formatted': self._format_time(self.short_train_time),
+                'description': f'短轮次训练阶段 (Top {config.HISTORY_TOP_N1} 个模型, {config.SHORT_TRAIN_EPOCHS} epochs)'
+            },
+            'full_training_phase': {
+                'time_seconds': self.full_train_time,
+                'time_formatted': self._format_time(self.full_train_time),
+                'description': f'完整训练阶段 (Top {config.HISTORY_TOP_N2} 个模型, {config.FULL_TRAIN_EPOCHS} epochs)'
+            },
+            'total': {
+                'time_seconds': total_time,
+                'time_formatted': self._format_time(total_time),
+                'description': '总耗时'
+            }
+        }
+        
+        # 保存到JSON文件
+        if filepath is None:
+            if not os.path.exists(config.LOG_DIR):
+                os.makedirs(config.LOG_DIR)
+            filepath = os.path.join(config.LOG_DIR, 'time_stats.json')
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(self.time_stats, f, indent=2, ensure_ascii=False)
+        
+        # 打印时间统计总结
+        logger.info("=" * 60)
+        logger.info("时间统计总结")
+        logger.info("=" * 60)
+        logger.info(f"搜索阶段:       {self._format_time(self.search_time)}")
+        logger.info(f"短轮次训练:     {self._format_time(self.short_train_time)}")
+        logger.info(f"完整训练:       {self._format_time(self.full_train_time)}")
+        logger.info("-" * 60)
+        logger.info(f"总耗时:         {self._format_time(total_time)}")
+        logger.info("=" * 60)
+        logger.info(f"Time stats saved to {filepath}")
