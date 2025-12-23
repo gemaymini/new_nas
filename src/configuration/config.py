@@ -65,7 +65,7 @@ class Config:
     NTK_BATCH_SIZE = 64              
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 5,000,000  # 提高阈值，避免太多模型被跳过
+    NTK_PARAM_THRESHOLD = 5000000  # 提高阈值，避免太多模型被跳过
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
