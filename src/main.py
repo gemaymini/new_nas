@@ -79,16 +79,16 @@ def main():
             sys.exit(1)
                 
     try:
-            nas.run_search()
-            nas.run_screening_and_training()
+        nas.run_search()
+        nas.run_screening_and_training()
     except KeyboardInterrupt:
-            logger.warning("Interrupted by user")
-            nas.save_checkpoint()
-            sys.exit(0)
+        logger.warning("Interrupted by user")
+        nas.save_checkpoint()
+        sys.exit(0)
     except Exception as e:
-            logger.error(f"Evolution failed: {e}")
-            nas.save_checkpoint()
-            raise
+        logger.error(f"Evolution failed: {e}")
+        nas.save_checkpoint()
+        raise
 
 if __name__ == '__main__':
     main()

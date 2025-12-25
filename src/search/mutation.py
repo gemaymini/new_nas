@@ -88,12 +88,18 @@ class MutationOperator:
         unit_idx = random.randint(0, unit_num - 1)
         block_idx = random.randint(0, block_nums[unit_idx] - 1)
         old_block = block_params_list[unit_idx][block_idx]
-        param_to_modify = random.choice(['out_channels', 'groups', 'pool_type', 'pool_stride', 'has_senet'])
+        # 扩展可修改的参数列表
+        param_to_modify = random.choice([
+            'out_channels', 'groups', 'pool_type', 'pool_stride', 'has_senet',
+            'activation_type', 'dropout_rate', 'skip_type', 'kernel_size'
+        ])
         
         if param_to_modify == 'out_channels':
             new_value = search_space.sample_channel()
             old_block.out_channels = new_value
-            if old_block.groups > new_value: old_block.groups = search_space.sample_groups(new_value)
+            # 确保 groups 仍然有效（能整除新的 out_channels）
+            if old_block.groups > new_value or new_value % old_block.groups != 0:
+                old_block.groups = search_space.sample_groups(new_value)
         elif param_to_modify == 'groups':
             old_block.groups = search_space.sample_groups(old_block.out_channels)
         elif param_to_modify == 'pool_type':
@@ -102,6 +108,14 @@ class MutationOperator:
             old_block.pool_stride = search_space.sample_pool_stride()
         elif param_to_modify == 'has_senet':
             old_block.has_senet = search_space.sample_senet()
+        elif param_to_modify == 'activation_type':
+            old_block.activation_type = search_space.sample_activation()
+        elif param_to_modify == 'dropout_rate':
+            old_block.dropout_rate = search_space.sample_dropout()
+        elif param_to_modify == 'skip_type':
+            old_block.skip_type = search_space.sample_skip_type()
+        elif param_to_modify == 'kernel_size':
+            old_block.kernel_size = search_space.sample_kernel_size()
             
         return Encoder.encode(unit_num, block_nums, block_params_list)
 
@@ -133,8 +147,7 @@ class MutationOperator:
         return new_individual
 
 class SelectionOperator:
-    @staticmethod
-    def tournament_selection(population: List[Individual], tournament_size: int = None, num_winners: int = None) -> List[Individual]:
+    def tournament_selection(self, population: List[Individual], tournament_size: int = None, num_winners: int = None) -> List[Individual]:
         if tournament_size is None: tournament_size = config.TOURNAMENT_SIZE
         if num_winners is None: num_winners = config.TOURNAMENT_WINNERS
         
@@ -145,8 +158,7 @@ class SelectionOperator:
         return sorted_competitors[:num_winners]
 
 class CrossoverOperator:
-    @staticmethod
-    def uniform_unit_crossover(parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
+    def uniform_unit_crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
         unit_num1, block_nums1, block_params_list1 = Encoder.decode(parent1.encoding)
         unit_num2, block_nums2, block_params_list2 = Encoder.decode(parent2.encoding)
         

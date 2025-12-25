@@ -8,30 +8,53 @@ import copy
 from typing import List, Tuple, Optional
 from configuration.config import config
 
+# Block参数数量常量（用于编解码）
+BLOCK_PARAM_COUNT = 9
+
 class BlockParams:
     """
     Block参数封装类
+    扩展参数：activation_type, dropout_rate, skip_type, kernel_size
     """
     def __init__(self, out_channels: int, groups: int, pool_type: int, 
-                 pool_stride: int, has_senet: int):
+                 pool_stride: int, has_senet: int, activation_type: int = 0,
+                 dropout_rate: float = 0.0, skip_type: int = 0, kernel_size: int = 3):
         self.out_channels = out_channels
         self.groups = groups
         self.pool_type = pool_type
         self.pool_stride = pool_stride
         self.has_senet = has_senet
+        # 新增参数
+        self.activation_type = activation_type  # 0=ReLU, 1=SiLU, 2=GELU
+        self.dropout_rate = dropout_rate        # Dropout率
+        self.skip_type = skip_type              # 0=add, 1=concat, 2=none
+        self.kernel_size = kernel_size          # 卷积核大小: 3, 5, 7
     
-    def to_list(self) -> List[int]:
+    def to_list(self) -> List:
+        # dropout_rate 使用整数编码 (乘以100存储)
+        dropout_encoded = int(self.dropout_rate * 100)
         return [self.out_channels, self.groups, self.pool_type, 
-                self.pool_stride, self.has_senet]
+                self.pool_stride, self.has_senet, self.activation_type,
+                dropout_encoded, self.skip_type, self.kernel_size]
     
     @classmethod
-    def from_list(cls, params: List[int]) -> 'BlockParams':
-        return cls(params[0], params[1], params[2], params[3], params[4])
+    def from_list(cls, params: List) -> 'BlockParams':
+        # 兼容旧版5参数编码
+        if len(params) == 5:
+            return cls(params[0], params[1], params[2], params[3], params[4])
+        # 新版9参数编码
+        dropout_rate = params[6] / 100.0  # 解码dropout率
+        return cls(params[0], params[1], params[2], params[3], params[4],
+                   params[5], dropout_rate, params[7], params[8])
     
     def __repr__(self):
+        activation_names = {0: 'ReLU', 1: 'SiLU', 2: 'GELU'}
+        skip_names = {0: 'add', 1: 'concat', 2: 'none'}
         return (f"BlockParams(out_ch={self.out_channels}, groups={self.groups}, "
                 f"pool_type={self.pool_type}, pool_stride={self.pool_stride}, "
-                f"has_senet={self.has_senet})")
+                f"has_senet={self.has_senet}, activation={activation_names.get(self.activation_type, 'ReLU')}, "
+                f"dropout={self.dropout_rate}, skip={skip_names.get(self.skip_type, 'add')}, "
+                f"kernel_size={self.kernel_size})")
 
 class Individual:
     """
@@ -59,14 +82,20 @@ class Encoder:
     @staticmethod
     def random_block_params() -> BlockParams:
         out_channels = random.choice(config.CHANNEL_OPTIONS)
-        groups = random.choice(config.GROUP_OPTIONS)
-        while groups > out_channels:
-            groups = random.choice(config.GROUP_OPTIONS)
+        # 确保 groups <= out_channels 且 out_channels % groups == 0
+        valid_groups = [g for g in config.GROUP_OPTIONS if g <= out_channels and out_channels % g == 0]
+        groups = random.choice(valid_groups) if valid_groups else 1
         pool_type = random.choice(config.POOL_TYPE_OPTIONS)
         pool_stride = random.choice(config.POOL_STRIDE_OPTIONS)
         has_senet = random.choice(config.SENET_OPTIONS)
+        # 新增参数
+        activation_type = random.choice(config.ACTIVATION_OPTIONS)
+        dropout_rate = random.choice(config.DROPOUT_OPTIONS)
+        skip_type = random.choice(config.SKIP_TYPE_OPTIONS)
+        kernel_size = random.choice(config.KERNEL_SIZE_OPTIONS)
         
-        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet)
+        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
+                           activation_type, dropout_rate, skip_type, kernel_size)
     
     @staticmethod
     def create_random_encoding() -> List[int]:
@@ -100,12 +129,12 @@ class Encoder:
         for block_num in block_nums:
             unit_blocks = []
             for _ in range(block_num):
-                params = encoding[idx:idx+5]
-                if len(params) < 5:
+                params = encoding[idx:idx+BLOCK_PARAM_COUNT]
+                if len(params) < BLOCK_PARAM_COUNT:
                     raise ValueError(f"Incomplete block params at index {idx}")
                 block_params = BlockParams.from_list(params)
                 unit_blocks.append(block_params)
-                idx += 5
+                idx += BLOCK_PARAM_COUNT
             block_params_list.append(unit_blocks)
         
         return unit_num, block_nums, block_params_list
@@ -139,12 +168,48 @@ class Encoder:
                     if bp.out_channels not in config.CHANNEL_OPTIONS: return False
                     if bp.groups not in config.GROUP_OPTIONS: return False
                     if bp.groups > bp.out_channels: return False
+                    if bp.out_channels % bp.groups != 0: return False  # 确保能整除
                     if bp.pool_type not in config.POOL_TYPE_OPTIONS: return False
                     if bp.pool_stride not in config.POOL_STRIDE_OPTIONS: return False
                     if bp.has_senet not in config.SENET_OPTIONS: return False
+                    # 新增参数验证
+                    if bp.activation_type not in config.ACTIVATION_OPTIONS: return False
+                    if bp.dropout_rate not in config.DROPOUT_OPTIONS: return False
+                    if bp.skip_type not in config.SKIP_TYPE_OPTIONS: return False
+                    if bp.kernel_size not in config.KERNEL_SIZE_OPTIONS: return False
             
             if not Encoder.validate_feature_size(encoding):
                 return False
+            
+            # 验证通道数不会爆炸（特别是 concat 模式）
+            if not Encoder.validate_channel_count(encoding):
+                return False
+            
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def validate_channel_count(encoding: List[int], init_channels: int = None) -> bool:
+        """验证网络通道数不会超过最大限制"""
+        if init_channels is None:
+            init_channels = config.INIT_CONV_OUT_CHANNELS
+        
+        try:
+            _, _, block_params_list = Encoder.decode(encoding)
+            current_channels = init_channels
+            
+            for unit_blocks in block_params_list:
+                for bp in unit_blocks:
+                    out_channels = bp.out_channels * config.EXPANSION
+                    if bp.skip_type == 1:  # concat
+                        final_channels = out_channels + current_channels
+                    else:
+                        final_channels = out_channels
+                    
+                    if final_channels > config.MAX_CHANNELS:
+                        return False
+                    current_channels = final_channels
             
             return True
         except Exception:
@@ -202,6 +267,12 @@ class Encoder:
             for j, bp in enumerate(unit_blocks):
                 pool_type_str = "MaxPool" if bp.pool_type == 0 else "AvgPool"
                 senet_str = "Yes" if bp.has_senet == 1 else "No"
+                activation_names = {0: 'ReLU', 1: 'SiLU', 2: 'GELU'}
+                skip_names = {0: 'add', 1: 'concat', 2: 'none'}
+                activation_str = activation_names.get(bp.activation_type, 'ReLU')
+                skip_str = skip_names.get(bp.skip_type, 'add')
                 print(f"  Block {j+1}: out_ch={bp.out_channels}, groups={bp.groups}, "
-                      f"pool={pool_type_str}, stride={bp.pool_stride}, SENet={senet_str}")
+                      f"pool={pool_type_str}, stride={bp.pool_stride}, SENet={senet_str}, "
+                      f"act={activation_str}, dropout={bp.dropout_rate}, skip={skip_str}, "
+                      f"kernel={bp.kernel_size}")
         print(f"\n{'='*60}\n")
