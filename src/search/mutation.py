@@ -83,39 +83,56 @@ class MutationOperator:
         block_nums[unit_idx] -= 1
         return Encoder.encode(unit_num, block_nums, block_params_list)
 
-    def modify_block(self, encoding: List[int]) -> List[int]:
+    def modify_block(self, encoding: List[int], num_params_to_modify: int = 3) -> List[int]:
+        """
+        修改一个 block 的多个参数
+        
+        Args:
+            encoding: 编码列表
+            num_params_to_modify: 要修改的参数数量，默认为3
+        """
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         unit_idx = random.randint(0, unit_num - 1)
         block_idx = random.randint(0, block_nums[unit_idx] - 1)
         old_block = block_params_list[unit_idx][block_idx]
-        # 扩展可修改的参数列表
-        param_to_modify = random.choice([
+        
+        # 所有可修改的参数列表
+        all_params = [
             'out_channels', 'groups', 'pool_type', 'pool_stride', 'has_senet',
             'activation_type', 'dropout_rate', 'skip_type', 'kernel_size'
-        ])
+        ]
         
-        if param_to_modify == 'out_channels':
+        # 随机选择 num_params_to_modify 个参数进行变异
+        params_to_modify = random.sample(all_params, min(num_params_to_modify, len(all_params)))
+        
+        # 如果要修改 out_channels，需要先处理（因为可能影响 groups）
+        if 'out_channels' in params_to_modify:
             new_value = search_space.sample_channel()
             old_block.out_channels = new_value
             # 确保 groups 仍然有效（能整除新的 out_channels）
             if old_block.groups > new_value or new_value % old_block.groups != 0:
                 old_block.groups = search_space.sample_groups(new_value)
-        elif param_to_modify == 'groups':
-            old_block.groups = search_space.sample_groups(old_block.out_channels)
-        elif param_to_modify == 'pool_type':
-            old_block.pool_type = search_space.sample_pool_type()
-        elif param_to_modify == 'pool_stride':
-            old_block.pool_stride = search_space.sample_pool_stride()
-        elif param_to_modify == 'has_senet':
-            old_block.has_senet = search_space.sample_senet()
-        elif param_to_modify == 'activation_type':
-            old_block.activation_type = search_space.sample_activation()
-        elif param_to_modify == 'dropout_rate':
-            old_block.dropout_rate = search_space.sample_dropout()
-        elif param_to_modify == 'skip_type':
-            old_block.skip_type = search_space.sample_skip_type()
-        elif param_to_modify == 'kernel_size':
-            old_block.kernel_size = search_space.sample_kernel_size()
+        
+        # 处理其他参数
+        for param in params_to_modify:
+            if param == 'out_channels':
+                continue  # 已处理
+            elif param == 'groups':
+                old_block.groups = search_space.sample_groups(old_block.out_channels)
+            elif param == 'pool_type':
+                old_block.pool_type = search_space.sample_pool_type()
+            elif param == 'pool_stride':
+                old_block.pool_stride = search_space.sample_pool_stride()
+            elif param == 'has_senet':
+                old_block.has_senet = search_space.sample_senet()
+            elif param == 'activation_type':
+                old_block.activation_type = search_space.sample_activation()
+            elif param == 'dropout_rate':
+                old_block.dropout_rate = search_space.sample_dropout()
+            elif param == 'skip_type':
+                old_block.skip_type = search_space.sample_skip_type()
+            elif param == 'kernel_size':
+                old_block.kernel_size = search_space.sample_kernel_size()
             
         return Encoder.encode(unit_num, block_nums, block_params_list)
 

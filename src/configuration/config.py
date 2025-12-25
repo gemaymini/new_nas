@@ -12,7 +12,7 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE =100         # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 1000                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 5000                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
