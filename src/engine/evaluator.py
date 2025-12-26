@@ -91,13 +91,13 @@ class NTKEvaluator:
                 grad = []
                 for name, p in network.named_parameters():
                     if 'weight' in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach())  # ✅ 不需要 clone
+                        grad.append(p.grad.view(-1).detach().clone())  # ✅ 需要 clone，防止 zero_grad 清空
 
                 if grad:
                     grads.append(torch.cat(grad, -1))  # ✅ 加上 dim=-1 保持一致
 
                 network.zero_grad()  # ✅ 移到这里，和原始代码一致
-                torch.cuda.empty_cache()
+                # torch.cuda.empty_cache() # 移出循环以提升速度
 
         if len(grads) == 0:
             return 100000.0

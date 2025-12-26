@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 DEFAULT_RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiment_results')
 
 # 开关：是否生成虚拟数据点补充至目标数量
-ENABLE_VIRTUAL_POINTS = False # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
-TARGET_TOTAL = 150  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
+ENABLE_VIRTUAL_POINTS = True # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
+TARGET_TOTAL = 400  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
 
 
 def load_experiment_logs(log_dir: str = None, log_files: list = None):
