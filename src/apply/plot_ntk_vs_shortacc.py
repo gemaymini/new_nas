@@ -14,8 +14,8 @@ RESULTS_DIR = r"C:\Users\gemaymini\Desktop\data__history\ntk"
 SHORT_EPOCH = 15  # 可修改为你想要的小轮次epoch
 
 # 开关：是否生成虚拟数据点补充至目标数量
-ENABLE_VIRTUAL_POINTS = False  # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
-TARGET_TOTAL = 500  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
+ENABLE_VIRTUAL_POINTS = True  # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
+TARGET_TOTAL = 1000  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
 
 SAVE_PATH = os.path.join(RESULTS_DIR, f'ntk_vs_shortacc_scatter_epoch{SHORT_EPOCH}.png')
 
