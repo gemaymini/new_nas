@@ -19,6 +19,12 @@ import json
 import time
 import random
 import argparse
+import warnings
+
+# 抑制 NumPy 弃用警告（torchvision 与 NumPy 2.4+ 兼容性问题）
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', message='.*dtype.*align.*')
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
@@ -62,7 +68,15 @@ class MultiGPUTrainer:
             gpu_ids: 要使用的GPU ID列表，如[0, 1]表示使用GPU 0和GPU 1
                     如果为None，则自动使用所有可用GPU
         """
-        if torch.cuda.is_available():
+        # 更健壮地检测 CUDA 可用性
+        cuda_available = False
+        try:
+            cuda_available = torch.cuda.is_available() and torch.cuda.device_count() > 0
+        except Exception as e:
+            logger.warning(f"CUDA initialization failed: {e}")
+            cuda_available = False
+            
+        if cuda_available:
             if gpu_ids is None:
                 self.gpu_ids = list(range(torch.cuda.device_count()))
             else:
@@ -73,6 +87,7 @@ class MultiGPUTrainer:
             self.gpu_ids = []
             self.device = torch.device('cpu')
             self.num_gpus = 0
+            logger.warning("CUDA not available, falling back to CPU mode")
             
         logger.info(f"MultiGPUTrainer initialized with {self.num_gpus} GPU(s): {self.gpu_ids}")
         
@@ -856,7 +871,13 @@ def run_experiment(args):
     logger.info("=" * 70)
     
     # 显示GPU信息
-    if torch.cuda.is_available():
+    cuda_available = False
+    try:
+        cuda_available = torch.cuda.is_available() and torch.cuda.device_count() > 0
+    except Exception as e:
+        logger.warning(f"CUDA initialization check failed: {e}")
+        
+    if cuda_available:
         num_gpus = torch.cuda.device_count()
         logger.info(f"Available GPUs: {num_gpus}")
         for i in range(num_gpus):
