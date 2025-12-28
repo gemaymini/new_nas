@@ -37,3 +37,5 @@ Thumbs.db
 *.txt
 /src/apply/experiment_results
 /src/apply/ntk_experiment_results
+/src/data/cifar-10-batches-py
+/src/data/cifar-10-python.tar.gz
