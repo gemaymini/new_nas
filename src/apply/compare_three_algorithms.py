@@ -41,9 +41,9 @@ from engine.evaluator import fitness_evaluator, FinalEvaluator, clear_gpu_memory
 from models.network import NetworkBuilder
 from utils.logger import logger
 
-# 设置中文字体
-rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
-rcParams['axes.unicode_minus'] = False
+# 设置英文字体避免中文乱码
+rcParams['font.family'] = 'DejaVu Sans'
+rcParams['axes.unicode_minus'] = True
 
 
 class ModelInfo:
@@ -563,31 +563,31 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
             ax.plot(hull_points[:, 0], hull_points[:, 1], 
                    color=color, linewidth=2, alpha=0.7)
         except Exception as e:
-            logger.warning(f"无法绘制凸包: {e}")
+            logger.warning(f"Cannot draw convex hull: {e}")
     
     # 绘制三种算法的结果
     if len(ts_params) > 0:
-        plot_with_hull(ts_params, ts_accs, colors['three_stage'], '三阶段EA', 'o')
+        plot_with_hull(ts_params, ts_accs, colors['three_stage'], 'Three-Stage EA', 'o')
     if len(te_params) > 0:
-        plot_with_hull(te_params, te_accs, colors['traditional'], '传统EA', 's')
+        plot_with_hull(te_params, te_accs, colors['traditional'], 'Traditional EA', 's')
     if len(rs_params) > 0:
-        plot_with_hull(rs_params, rs_accs, colors['random'], '随机搜索', '^')
+        plot_with_hull(rs_params, rs_accs, colors['random'], 'Random Search', '^')
     
     # 设置图表样式
-    ax.set_xlabel('参数量 (M)', fontsize=14)
-    ax.set_ylabel('验证精度 (%)', fontsize=14)
-    ax.set_title('三种搜索算法在网络分类精度和参数量上的比较结果', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Parameters (M)', fontsize=14)
+    ax.set_ylabel('Validation Accuracy (%)', fontsize=14)
+    ax.set_title('Comparison of Three Search Algorithms', fontsize=14, fontweight='bold')
     ax.legend(loc='lower right', fontsize=12)
     ax.grid(True, alpha=0.3)
     
     # 添加统计信息
     stats_text = []
     if len(ts_accs) > 0:
-        stats_text.append(f"三阶段EA: 平均精度={np.mean(ts_accs):.2f}%, 平均参数={np.mean(ts_params):.2f}M")
+        stats_text.append(f"Three-Stage EA: Avg Acc={np.mean(ts_accs):.2f}%, Avg Params={np.mean(ts_params):.2f}M")
     if len(te_accs) > 0:
-        stats_text.append(f"传统EA: 平均精度={np.mean(te_accs):.2f}%, 平均参数={np.mean(te_params):.2f}M")
+        stats_text.append(f"Traditional EA: Avg Acc={np.mean(te_accs):.2f}%, Avg Params={np.mean(te_params):.2f}M")
     if len(rs_accs) > 0:
-        stats_text.append(f"随机搜索: 平均精度={np.mean(rs_accs):.2f}%, 平均参数={np.mean(rs_params):.2f}M")
+        stats_text.append(f"Random Search: Avg Acc={np.mean(rs_accs):.2f}%, Avg Params={np.mean(rs_params):.2f}M")
     
     stats_str = '\n'.join(stats_text)
     ax.text(0.02, 0.98, stats_str, transform=ax.transAxes, fontsize=10,
