@@ -150,13 +150,13 @@ class ThreeStageEA:
             final_models: 完整训练后的模型列表
         """
         logger.info("=" * 60)
-        logger.info("三阶段EA算法开始")
-        logger.info(f"配置: max_eval={self.max_evaluations}, pop={self.population_size}")
-        logger.info(f"       top_n1={self.top_n1}, top_n2={self.top_n2}")
+        logger.info("Three-Stage EA Algorithm Started")
+        logger.info(f"Config: max_eval={self.max_evaluations}, pop={self.population_size}")
+        logger.info(f"        top_n1={self.top_n1}, top_n2={self.top_n2}")
         logger.info("=" * 60)
         
-        # ==================== 阶段1: NTK筛选 ====================
-        logger.info("\n[阶段1] NTK评估与老化进化搜索...")
+        # ==================== Stage 1: NTK Screening ====================
+        logger.info("\n[Stage 1] NTK Evaluation & Aging Evolution Search...")
         
         eval_count = 0
         
@@ -170,7 +170,7 @@ class ThreeStageEA:
             eval_count += 1
             
             if eval_count % 20 == 0:
-                logger.info(f"  初始化进度: {eval_count}/{self.population_size}")
+                logger.info(f"  Initialization progress: {eval_count}/{self.population_size}")
                 clear_gpu_memory()
         
         # 老化进化循环
@@ -190,13 +190,13 @@ class ThreeStageEA:
                 valid_fitnesses = [ind.fitness for ind in self.history 
                                    if ind.fitness is not None and ind.fitness < 100000]
                 best_ntk = min(valid_fitnesses) if valid_fitnesses else float('inf')
-                logger.info(f"  进化进度: {eval_count}/{self.max_evaluations}, 最佳NTK: {best_ntk:.2f}")
+                logger.info(f"  Evolution progress: {eval_count}/{self.max_evaluations}, Best NTK: {best_ntk:.2f}")
                 clear_gpu_memory()
         
-        logger.info(f"阶段1完成: 评估了 {len(self.history)} 个架构")
+        logger.info(f"Stage 1 completed: Evaluated {len(self.history)} architectures")
         
-        # ==================== 阶段2: 短期训练筛选 ====================
-        logger.info(f"\n[阶段2] 短期训练筛选 (Top {self.top_n1}, {self.short_epochs} epochs)...")
+        # ==================== Stage 2: Short Training Screening ====================
+        logger.info(f"\n[Stage 2] Short Training Screening (Top {self.top_n1}, {self.short_epochs} epochs)...")
         
         # 去重并按NTK排序
         unique_history = {}
@@ -212,31 +212,31 @@ class ThreeStageEA:
         candidates.sort(key=lambda x: x.fitness if x.fitness is not None else float('inf'))
         top_n1_candidates = candidates[:self.top_n1]
         
-        logger.info(f"  从 {len(candidates)} 个唯一架构中选出 Top {len(top_n1_candidates)}")
+        logger.info(f"  Selected Top {len(top_n1_candidates)} from {len(candidates)} unique architectures")
         
         if evaluator is None:
             evaluator = FinalEvaluator(dataset=config.FINAL_DATASET)
         
         short_train_results = []
         for i, ind in enumerate(top_n1_candidates):
-            logger.info(f"  短期训练 [{i+1}/{len(top_n1_candidates)}] ID: {ind.id}")
+            logger.info(f"  Short training [{i+1}/{len(top_n1_candidates)}] ID: {ind.id}")
             try:
                 acc, _ = evaluator.evaluate_individual(ind, epochs=self.short_epochs)
                 ind.quick_score = acc
                 short_train_results.append(ind)
             except Exception as e:
-                logger.warning(f"  短期训练失败: {e}")
+                logger.warning(f"  Short training failed: {e}")
                 ind.quick_score = 0
             clear_gpu_memory()
         
-        # ==================== 阶段3: 完整训练 ====================
-        logger.info(f"\n[阶段3] 完整训练 (Top {self.top_n2}, {self.full_epochs} epochs)...")
+        # ==================== Stage 3: Full Training ====================
+        logger.info(f"\n[Stage 3] Full Training (Top {self.top_n2}, {self.full_epochs} epochs)...")
         
         short_train_results.sort(key=lambda x: x.quick_score if x.quick_score else 0, reverse=True)
         top_n2_candidates = short_train_results[:self.top_n2]
         
         for i, ind in enumerate(top_n2_candidates):
-            logger.info(f"  完整训练 [{i+1}/{len(top_n2_candidates)}] ID: {ind.id}")
+            logger.info(f"  Full training [{i+1}/{len(top_n2_candidates)}] ID: {ind.id}")
             try:
                 acc, _ = evaluator.evaluate_individual(ind, epochs=self.full_epochs)
                 param_count = get_model_param_count(ind)
@@ -248,12 +248,12 @@ class ThreeStageEA:
                     ntk_score=ind.fitness
                 )
                 self.final_models.append(model_info)
-                logger.info(f"    精度: {acc:.2f}%, 参数量: {param_count:.2f}M")
+                logger.info(f"    Accuracy: {acc:.2f}%, Params: {param_count:.2f}M")
             except Exception as e:
-                logger.warning(f"  完整训练失败: {e}")
+                logger.warning(f"  Full training failed: {e}")
             clear_gpu_memory()
         
-        logger.info(f"\n三阶段EA完成，共获得 {len(self.final_models)} 个最终模型")
+        logger.info(f"\nThree-Stage EA completed, obtained {len(self.final_models)} final models")
         return self.final_models
 
 
@@ -326,7 +326,7 @@ class TraditionalEA:
             acc, _ = evaluator.evaluate_individual(ind, epochs=self.search_epochs)
             return acc
         except Exception as e:
-            logger.warning(f"  适应度评估失败: {e}")
+            logger.warning(f"  Fitness evaluation failed: {e}")
             return 0.0
     
     def run(self, evaluator: FinalEvaluator = None) -> List[ModelInfo]:
@@ -340,10 +340,10 @@ class TraditionalEA:
             final_models: 完整训练后的模型列表
         """
         logger.info("=" * 60)
-        logger.info("传统EA算法（经典Aging Evolution）开始")
-        logger.info(f"配置: max_eval={self.max_evaluations}, pop={self.population_size}")
-        logger.info(f"       search_epochs={self.search_epochs}, full_epochs={self.full_epochs}")
-        logger.info(f"       top_n={self.top_n}")
+        logger.info("Traditional EA (Classic Aging Evolution) Started")
+        logger.info(f"Config: max_eval={self.max_evaluations}, pop={self.population_size}")
+        logger.info(f"        search_epochs={self.search_epochs}, full_epochs={self.full_epochs}")
+        logger.info(f"        top_n={self.top_n}")
         logger.info("=" * 60)
         
         if evaluator is None:
@@ -352,11 +352,11 @@ class TraditionalEA:
         eval_count = 0
         best_fitness = 0.0
         
-        # ==================== 阶段1: 老化进化搜索 ====================
-        logger.info(f"\n[阶段1] 老化进化搜索 (适应度={self.search_epochs}轮训练精度)...")
+        # ==================== Stage 1: Aging Evolution Search ====================
+        logger.info(f"\n[Stage 1] Aging Evolution Search (fitness={self.search_epochs} epoch accuracy)...")
         
-        # 1.1 初始化种群
-        logger.info(f"  初始化种群 (size={self.population_size})...")
+        # 1.1 Initialize population
+        logger.info(f"  Initializing population (size={self.population_size})...")
         while len(self.population) < self.population_size and eval_count < self.max_evaluations:
             ind = population_initializer.create_valid_individual()
             ind.id = eval_count
@@ -372,13 +372,13 @@ class TraditionalEA:
             best_fitness = max(best_fitness, fitness)
             
             if eval_count % 5 == 0:
-                logger.info(f"    初始化进度: {eval_count}/{self.population_size}, 最佳精度: {best_fitness:.2f}%")
+                logger.info(f"    Init progress: {eval_count}/{self.population_size}, Best Acc: {best_fitness:.2f}%")
             clear_gpu_memory()
         
-        logger.info(f"  种群初始化完成，当前最佳精度: {best_fitness:.2f}%")
+        logger.info(f"  Population initialized, current best: {best_fitness:.2f}%")
         
-        # 1.2 老化进化循环
-        logger.info(f"\n  开始进化循环...")
+        # 1.2 Aging Evolution Loop
+        logger.info(f"\n  Starting evolution loop...")
         while eval_count < self.max_evaluations:
             # 选择父代
             parent1, parent2 = self._select_parents()
@@ -400,13 +400,13 @@ class TraditionalEA:
             best_fitness = max(best_fitness, fitness)
             
             if eval_count % 10 == 0:
-                logger.info(f"    进化进度: {eval_count}/{self.max_evaluations}, 当前精度: {fitness:.2f}%, 最佳: {best_fitness:.2f}%")
+                logger.info(f"    Evolution progress: {eval_count}/{self.max_evaluations}, Current: {fitness:.2f}%, Best: {best_fitness:.2f}%")
             clear_gpu_memory()
         
-        logger.info(f"\n  搜索阶段完成，共评估 {len(self.history)} 个架构，最佳精度: {best_fitness:.2f}%")
+        logger.info(f"\n  Search completed, evaluated {len(self.history)} architectures, best: {best_fitness:.2f}%")
         
-        # ==================== 阶段2: 完整训练 Top N ====================
-        logger.info(f"\n[阶段2] 完整训练 Top {self.top_n} 模型 ({self.full_epochs} epochs)...")
+        # ==================== Stage 2: Full Training Top N ====================
+        logger.info(f"\n[Stage 2] Full Training Top {self.top_n} Models ({self.full_epochs} epochs)...")
         
         # 去重并按适应度排序
         unique_history = {}
@@ -423,10 +423,10 @@ class TraditionalEA:
         candidates.sort(key=lambda x: x.fitness if x.fitness is not None else 0, reverse=True)
         top_candidates = candidates[:self.top_n]
         
-        logger.info(f"  从 {len(candidates)} 个唯一架构中选出 Top {len(top_candidates)}")
+        logger.info(f"  Selected Top {len(top_candidates)} from {len(candidates)} unique architectures")
         
         for i, ind in enumerate(top_candidates):
-            logger.info(f"  完整训练 [{i+1}/{len(top_candidates)}] ID: {ind.id}, 搜索阶段精度: {ind.fitness:.2f}%")
+            logger.info(f"  Full training [{i+1}/{len(top_candidates)}] ID: {ind.id}, Search Acc: {ind.fitness:.2f}%")
             try:
                 acc, _ = evaluator.evaluate_individual(ind, epochs=self.full_epochs)
                 param_count = get_model_param_count(ind)
@@ -438,12 +438,12 @@ class TraditionalEA:
                     ntk_score=None
                 )
                 self.final_models.append(model_info)
-                logger.info(f"    完整训练精度: {acc:.2f}%, 参数量: {param_count:.2f}M")
+                logger.info(f"    Full training accuracy: {acc:.2f}%, Params: {param_count:.2f}M")
             except Exception as e:
-                logger.warning(f"  完整训练失败: {e}")
+                logger.warning(f"  Full training failed: {e}")
             clear_gpu_memory()
         
-        logger.info(f"\n传统EA完成，共获得 {len(self.final_models)} 个最终模型")
+        logger.info(f"\nTraditional EA completed, obtained {len(self.final_models)} final models")
         return self.final_models
 
 
@@ -468,8 +468,8 @@ class RandomSearchAlgorithm:
             final_models: 完整训练后的模型列表
         """
         logger.info("=" * 60)
-        logger.info("随机搜索算法开始")
-        logger.info(f"配置: num_samples={self.num_samples}, full_epochs={self.full_epochs}")
+        logger.info("Random Search Started")
+        logger.info(f"Config: num_samples={self.num_samples}, full_epochs={self.full_epochs}")
         logger.info("=" * 60)
         
         if evaluator is None:
@@ -479,7 +479,7 @@ class RandomSearchAlgorithm:
             ind = population_initializer.create_valid_individual()
             ind.id = i
             
-            logger.info(f"\n  随机采样 [{i+1}/{self.num_samples}]")
+            logger.info(f"\n  Random sample [{i+1}/{self.num_samples}]")
             try:
                 acc, _ = evaluator.evaluate_individual(ind, epochs=self.full_epochs)
                 param_count = get_model_param_count(ind)
@@ -491,12 +491,12 @@ class RandomSearchAlgorithm:
                     ntk_score=None
                 )
                 self.final_models.append(model_info)
-                logger.info(f"    精度: {acc:.2f}%, 参数量: {param_count:.2f}M")
+                logger.info(f"    Accuracy: {acc:.2f}%, Params: {param_count:.2f}M")
             except Exception as e:
-                logger.warning(f"  训练失败: {e}")
+                logger.warning(f"  Training failed: {e}")
             clear_gpu_memory()
         
-        logger.info(f"\n随机搜索完成，共获得 {len(self.final_models)} 个最终模型")
+        logger.info(f"\nRandom Search completed, obtained {len(self.final_models)} final models")
         return self.final_models
 
 
@@ -601,12 +601,12 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(output_dir, f'algorithm_comparison_{timestamp}.png')
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        logger.info(f"图表已保存到: {output_path}")
+        logger.info(f"Chart saved to: {output_path}")
         
-        # 同时保存PDF格式
+        # Also save PDF format
         pdf_path = os.path.join(output_dir, f'algorithm_comparison_{timestamp}.pdf')
         plt.savefig(pdf_path, dpi=150, bbox_inches='tight')
-        logger.info(f"PDF已保存到: {pdf_path}")
+        logger.info(f"PDF saved to: {pdf_path}")
     
     if show_plot:
         plt.show()
@@ -656,7 +656,7 @@ def save_experiment_results(three_stage_models: List[ModelInfo],
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
     
-    logger.info(f"实验结果已保存到: {output_path}")
+    logger.info(f"Results saved to: {output_path}")
     return output_path
 
 
@@ -664,12 +664,12 @@ def run_experiment(args):
     """运行完整的对比实验"""
     
     logger.info("=" * 70)
-    logger.info("         三种搜索算法对比实验")
+    logger.info("         Three Algorithm Comparison Experiment")
     logger.info("=" * 70)
-    logger.info(f"实验配置:")
-    logger.info(f"  - 三阶段EA: NTK评估={args.ts_ntk_evals}, 短训练={args.ts_short_epochs}ep, 完整训练={args.full_epochs}ep")
-    logger.info(f"  - 传统EA: 搜索评估={args.te_evals}, 搜索训练={args.te_search_epochs}ep, Top{args.te_top_n}完整训练={args.full_epochs}ep")
-    logger.info(f"  - 随机搜索: 采样数={args.rs_samples}, 完整训练={args.full_epochs}ep")
+    logger.info(f"Experiment Config:")
+    logger.info(f"  - Three-Stage EA: NTK evals={args.ts_ntk_evals}, short={args.ts_short_epochs}ep, full={args.full_epochs}ep")
+    logger.info(f"  - Traditional EA: search evals={args.te_evals}, search={args.te_search_epochs}ep, Top{args.te_top_n} full={args.full_epochs}ep")
+    logger.info(f"  - Random Search: samples={args.rs_samples}, full={args.full_epochs}ep")
     logger.info("=" * 70)
     
     # 创建输出目录
@@ -686,10 +686,10 @@ def run_experiment(args):
     traditional_models = []
     random_models = []
     
-    # 1. 运行三阶段EA
+    # 1. Run Three-Stage EA
     if not args.skip_three_stage:
         logger.info("\n" + "=" * 50)
-        logger.info("开始运行: 三阶段EA")
+        logger.info("Starting: Three-Stage EA")
         logger.info("=" * 50)
         
         three_stage_ea = ThreeStageEA(
@@ -702,10 +702,10 @@ def run_experiment(args):
         )
         three_stage_models = three_stage_ea.run(evaluator)
     
-    # 2. 运行传统EA
+    # 2. Run Traditional EA
     if not args.skip_traditional:
         logger.info("\n" + "=" * 50)
-        logger.info("开始运行: 传统EA (经典Aging Evolution)")
+        logger.info("Starting: Traditional EA (Classic Aging Evolution)")
         logger.info("=" * 50)
         
         traditional_ea = TraditionalEA(
@@ -717,10 +717,10 @@ def run_experiment(args):
         )
         traditional_models = traditional_ea.run(evaluator)
     
-    # 3. 运行随机搜索
+    # 3. Run Random Search
     if not args.skip_random:
         logger.info("\n" + "=" * 50)
-        logger.info("开始运行: 随机搜索")
+        logger.info("Starting: Random Search")
         logger.info("=" * 50)
         
         random_search = RandomSearchAlgorithm(
@@ -748,31 +748,31 @@ def run_experiment(args):
         show_plot=not args.no_show
     )
     
-    # 打印最终统计
+    # Print final statistics
     logger.info("\n" + "=" * 70)
-    logger.info("                    实验结果汇总")
+    logger.info("                    Experiment Results Summary")
     logger.info("=" * 70)
     
     def print_stats(name, models):
         if not models:
-            logger.info(f"\n{name}: 无结果")
+            logger.info(f"\n{name}: No results")
             return
         accs = [m.accuracy for m in models if m.accuracy > 0]
         params = [m.param_count for m in models if m.param_count > 0]
         if accs:
             logger.info(f"\n{name}:")
-            logger.info(f"  模型数量: {len(models)}")
-            logger.info(f"  精度范围: {min(accs):.2f}% - {max(accs):.2f}%")
-            logger.info(f"  平均精度: {np.mean(accs):.2f}%")
-            logger.info(f"  参数范围: {min(params):.2f}M - {max(params):.2f}M")
-            logger.info(f"  平均参数: {np.mean(params):.2f}M")
+            logger.info(f"  Model count: {len(models)}")
+            logger.info(f"  Accuracy range: {min(accs):.2f}% - {max(accs):.2f}%")
+            logger.info(f"  Average accuracy: {np.mean(accs):.2f}%")
+            logger.info(f"  Params range: {min(params):.2f}M - {max(params):.2f}M")
+            logger.info(f"  Average params: {np.mean(params):.2f}M")
     
-    print_stats("三阶段EA", three_stage_models)
-    print_stats("传统EA", traditional_models)
-    print_stats("随机搜索", random_models)
+    print_stats("Three-Stage EA", three_stage_models)
+    print_stats("Traditional EA", traditional_models)
+    print_stats("Random Search", random_models)
     
     logger.info("\n" + "=" * 70)
-    logger.info("实验完成!")
+    logger.info("Experiment completed!")
     logger.info("=" * 70)
 
 
@@ -838,7 +838,7 @@ def main():
         args.te_search_epochs = 5
         args.rs_samples = 5
         args.full_epochs = 10
-        logger.info("使用快速测试模式")
+        logger.info("Using quick test mode")
     
     run_experiment(args)
 
