@@ -12,15 +12,15 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE =100         # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 10000                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 5000                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
     # ==================== 筛选与训练流程参数 ====================
-    HISTORY_TOP_N1 = 20             # 第一轮筛选：基于NTK选择Top N1
+    HISTORY_TOP_N1 = 10             # 第一轮筛选：基于NTK选择Top N1
     SHORT_TRAIN_EPOCHS = 30         # 第一轮筛选：短期训练轮数
     
-    HISTORY_TOP_N2 =  3             # 第二轮筛选：基于验证集Acc选择Top N2
+    HISTORY_TOP_N2 =  1             # 第二轮筛选：基于验证集Acc选择Top N2
     FULL_TRAIN_EPOCHS = 300         # 最终训练：完整训练轮数
     
     # ==================== 交叉算子参数 ====================
