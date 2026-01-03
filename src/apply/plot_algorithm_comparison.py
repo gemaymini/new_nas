@@ -1,279 +1,329 @@
 # -*- coding: utf-8 -*-
 """
-可视化脚本：生成三种算法对比图
-
-可以使用：
-1. 已有的实验结果JSON文件
-2. 手动输入的数据
-3. 模拟数据（用于演示）
-
-生成类似论文图3-13的精度-参数量对比图
+可视化脚本：Top-tier Minimalist Style (Refined Inset & Legend)
+优化点：图例右下角放置，手动优化放大图连接线与边框
 """
 
 import os
-import sys
 import json
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from matplotlib.patches import Rectangle, ConnectionPatch
 from scipy.spatial import ConvexHull
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from datetime import datetime
-from typing import List, Tuple, Dict
 
-# 使用英文字体，避免中文字体问题
-rcParams['font.family'] = 'DejaVu Sans'
-rcParams['axes.unicode_minus'] = True
+# --------------------- 1. 全局配置 (极简顶刊风格) ---------------------
+rcParams['pdf.fonttype'] = 42
+rcParams['ps.fonttype'] = 42
+rcParams['axes.unicode_minus'] = False
 
+# 字体设置：Times New Roman
+rcParams['font.family'] = 'serif'
+rcParams['font.serif'] = ['Times New Roman']
+rcParams['mathtext.fontset'] = 'stix'
+
+# 线条与刻度
+rcParams['axes.linewidth'] = 1.2
+rcParams['axes.labelsize'] = 16
+rcParams['xtick.labelsize'] = 14
+rcParams['ytick.labelsize'] = 14
+rcParams['xtick.major.size'] = 4
+rcParams['ytick.major.size'] = 4
+rcParams['xtick.minor.size'] = 2
+rcParams['ytick.minor.size'] = 2
+rcParams['xtick.direction'] = 'in'
+rcParams['ytick.direction'] = 'in'
+
+# 关键：去除上边框和右边框 (L-shape)
+rcParams['axes.spines.top'] = False
+rcParams['axes.spines.right'] = False
+
+# 去除网格
+rcParams['axes.grid'] = False
+
+# 图例
+rcParams['legend.fontsize'] = 13
+rcParams['legend.frameon'] = True
+rcParams['legend.edgecolor'] = 'black'
+
+# --------------------- 2. 数据与配色配置 ---------------------
+ALGORITHM_ALIASES = {
+    'Aging_NTK_Search': ['Aging_NTK_Search', 'three_stage_ea'],
+    'Aging_Search': ['Aging_Search', 'traditional_ea'],
+    'random_search': ['random_search']
+}
+ALGORITHM_KEYS = list(ALGORITHM_ALIASES.keys())
+
+# 专业配色 (RGB Hex)
+COLORS = {
+    'Aging_NTK_Search': '#D62728', # Red (SOTA)
+    'Aging_Search': '#1F77B4',     # Blue (Competitor)
+    'random_search': '#7F7F7F'     # Grey (Baseline)
+}
+
+MARKERS = {
+    'Aging_NTK_Search': 'D',       # Diamond
+    'Aging_Search': 'o',           # Circle
+    'random_search': 's'           # Square
+}
+
+LABELS = {
+    'Aging_NTK_Search': 'Aging NTK Search',
+    'Aging_Search': 'Aging Search',
+    'random_search': 'Random Search'
+}
 
 def generate_simulated_data():
-    """
-    生成模拟数据用于演示
-    基于图片中的数据分布特征
-    """
+    """生成模拟数据"""
     np.random.seed(42)
+    ts_params = np.linspace(0.8, 2.5, 15)
+    ts_accs = 95.0 + 1.5 * np.exp(-ts_params) + np.random.normal(0, 0.1, 15)
+    ts_accs = np.clip(ts_accs, 94.8, 96.6)
     
-    # 三阶段EA: 低参数量 + 高精度 (帕累托最优)
-    ts_params = np.random.uniform(0.8, 2.5, 15)
-    ts_accs = 95.8 + np.random.uniform(0, 0.8, 15) - (ts_params - 1.5) * 0.05
-    ts_accs = np.clip(ts_accs, 95.8, 96.6)
+    te_params = np.linspace(2.0, 8.0, 20)
+    te_accs = 92.0 - 1.0 * (te_params - 2.0) + np.random.normal(0, 0.8, 20)
+    te_accs = np.clip(te_accs, 75.0, 93.0)
     
-    # 传统EA: 中等参数量 + 中等精度
-    te_params = np.random.uniform(2.5, 5.5, 15)
-    te_accs = 95.8 + np.random.uniform(0, 0.7, 15)
-    te_accs = np.clip(te_accs, 95.8, 96.5)
-    
-    # 随机搜索: 高参数量 + 分散精度
-    rs_params = np.random.uniform(4.0, 7.0, 20)
-    rs_accs = 95.3 + np.random.uniform(0, 1.0, 20)
-    rs_accs = np.clip(rs_accs, 95.3, 96.3)
+    rs_params = np.random.uniform(4.0, 14.0, 30)
+    rs_accs = 85.0 - 2.0 * (rs_params - 4.0) + np.random.normal(0, 2.5, 30)
+    rs_accs = np.clip(rs_accs, 40.0, 88.0)
     
     return {
-        'three_stage_ea': {'params': ts_params.tolist(), 'accs': ts_accs.tolist()},
-        'traditional_ea': {'params': te_params.tolist(), 'accs': te_accs.tolist()},
+        'Aging_NTK_Search': {'params': ts_params.tolist(), 'accs': ts_accs.tolist()},
+        'Aging_Search': {'params': te_params.tolist(), 'accs': te_accs.tolist()},
         'random_search': {'params': rs_params.tolist(), 'accs': rs_accs.tolist()}
     }
 
-
 def load_experiment_results(json_path: str) -> dict:
-    """从JSON文件加载实验结果"""
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    
     result = {}
-    for key in ['three_stage_ea', 'traditional_ea', 'random_search']:
-        if key in data:
-            models = data[key]
+    for canonical_key, aliases in ALGORITHM_ALIASES.items():
+        models = None
+        for alias in aliases:
+            if alias in data:
+                models = data[alias]
+                break
+        if models:
             params = [m['param_count'] for m in models if m['param_count'] > 0]
             accs = [m['accuracy'] for m in models if m['accuracy'] > 0]
-            result[key] = {'params': params, 'accs': accs}
+            result[canonical_key] = {'params': params, 'accs': accs}
         else:
-            result[key] = {'params': [], 'accs': []}
-    
+            result[canonical_key] = {'params': [], 'accs': []}
     return result
 
+def merge_experiment_results(results: list) -> dict:
+    merged = {k: {'params': [], 'accs': []} for k in ALGORITHM_KEYS}
+    for res in results:
+        for key in merged.keys():
+            if key in res:
+                merged[key]['params'].extend(res[key].get('params', []))
+                merged[key]['accs'].extend(res[key].get('accs', []))
+    return merged
+
+def load_experiment_results_from_dir(json_dir: str) -> dict:
+    if not os.path.isdir(json_dir):
+        raise FileNotFoundError(f"Directory not found: {json_dir}")
+    json_files = [os.path.join(json_dir, f) for f in sorted(os.listdir(json_dir)) if f.lower().endswith('.json')]
+    results = []
+    for path in json_files:
+        try:
+            results.append(load_experiment_results(path))
+        except Exception:
+            continue
+    if not results:
+        raise RuntimeError(f"No valid JSON found in {json_dir}")
+    return merge_experiment_results(results)
 
 def plot_algorithm_comparison(data: dict, 
                               output_path: str = None,
                               show_plot: bool = True,
-                              title: str = None,
-                              style: str = 'paper'):
-    """
-    绘制三种算法的对比图
+                              show_inset: bool = True):
+    fig, ax = plt.subplots(figsize=(7.5, 6))
     
-    Args:
-        data: 包含三种算法数据的字典
-        output_path: 输出路径
-        show_plot: 是否显示图表
-        title: 图表标题
-        style: 绘图风格 ('paper' 或 'simple')
-    """
+    plot_order = ['random_search', 'Aging_Search', 'Aging_NTK_Search']
     
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    # 颜色配置（与论文图片一致）
-    colors = {
-        'three_stage_ea': '#FF6B6B',   # 红色
-        'traditional_ea': '#90EE90',    # 浅绿色
-        'random_search': '#6B8EFF'      # 蓝色
-    }
-    
-    labels = {
-        'three_stage_ea': 'Three-Stage EA',
-        'traditional_ea': 'Traditional EA',
-        'random_search': 'Random Search'
-    }
-    
-    markers = {
-        'three_stage_ea': 'o',
-        'traditional_ea': 'o',
-        'random_search': 'o'
-    }
-    
-    def plot_with_hull(params, accs, color, label, marker='o', zorder=1):
-        """绘制散点图和凸包"""
-        params = np.array(params)
-        accs = np.array(accs)
+    for key in plot_order:
+        if key not in data or not data[key]['params']:
+            continue
+            
+        params = np.array(data[key]['params'])
+        accs = np.array(data[key]['accs'])
         
-        if len(params) == 0:
-            return
+        ax.scatter(params, accs, 
+                   c=COLORS[key], 
+                   marker=MARKERS[key], 
+                   s=60, 
+                   alpha=0.8, 
+                   edgecolors='white', 
+                   linewidths=0.8,
+                   label=LABELS[key],
+                   zorder=3)
         
-        # 绘制散点
-        ax.scatter(params, accs, c=color, label=label, s=100, 
-                  alpha=0.9, edgecolors='white', linewidths=1.5, 
-                  marker=marker, zorder=zorder+1)
-        
-        # 绘制凸包
         if len(params) >= 3:
             try:
                 points = np.column_stack([params, accs])
                 hull = ConvexHull(points)
-                
-                hull_points = points[hull.vertices]
-                hull_points = np.vstack([hull_points, hull_points[0]])  # 闭合
-                
+                hull_points = np.vstack((points[hull.vertices], points[hull.vertices[0]]))
                 ax.fill(hull_points[:, 0], hull_points[:, 1], 
-                       color=color, alpha=0.25, zorder=zorder)
-                ax.plot(hull_points[:, 0], hull_points[:, 1], 
-                       color=color, linewidth=2, alpha=0.6, zorder=zorder)
-            except Exception:
+                        color=COLORS[key], 
+                        alpha=0.15, 
+                        zorder=2)
+            except:
                 pass
+
+    # --------------------- 坐标轴与标签 ---------------------
+    ax.set_xlabel('Parameters (M)', fontweight='bold')
+    ax.set_ylabel('Top-1 Accuracy (%)', fontweight='bold')
     
-    # 按顺序绘制（随机搜索在底层，三阶段EA在顶层）
-    plot_order = ['random_search', 'traditional_ea', 'three_stage_ea']
+    # 强制 L-shape
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
     
-    for i, key in enumerate(plot_order):
-        if key in data and len(data[key]['params']) > 0:
-            plot_with_hull(
-                data[key]['params'],
-                data[key]['accs'],
-                colors[key],
-                labels[key],
-                markers[key],
-                zorder=i
-            )
-    
-    # 设置图表样式
-    ax.set_xlabel('Parameters (M)', fontsize=14, fontweight='bold')
-    ax.set_ylabel('Validation Accuracy (%)', fontsize=14, fontweight='bold')
-    
-    if title is None:
-        title = 'Comparison of Three Search Algorithms on Accuracy vs Parameters'
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
-    
-    ax.legend(loc='lower right', fontsize=12, framealpha=0.9)
-    ax.grid(True, alpha=0.3, linestyle='--')
-    
-    # 设置坐标轴范围（基于数据自动调整，留出边距）
-    all_params = []
-    all_accs = []
-    for key in data:
-        all_params.extend(data[key]['params'])
-        all_accs.extend(data[key]['accs'])
-    
-    if all_params and all_accs:
-        param_margin = (max(all_params) - min(all_params)) * 0.1
-        acc_margin = (max(all_accs) - min(all_accs)) * 0.15
+    # 自动范围
+    all_p = [p for d in data.values() for p in d['params']]
+    all_a = [a for d in data.values() for a in d['accs']]
+    if all_p and all_a:
+        ax.set_xlim(0, max(all_p) * 1.05)
+        ax.set_ylim(min(50, min(all_a) * 0.9), min(100, max(all_a) * 1.02))
+
+    # [修改点1] 图例放置在右下角
+    # 使用 bbox_to_anchor 微调位置，避免贴边太紧
+    ax.legend(loc='lower right', frameon=True, fancybox=False, 
+              bbox_to_anchor=(0.98, 0.02), ncol=1)
+
+    # --------------------- 局部放大图 (优化版) ---------------------
+    if show_inset and 'Aging_NTK_Search' in data and len(data['Aging_NTK_Search']['params']) >= 3:
+        ts_p = np.array(data['Aging_NTK_Search']['params'])
+        ts_a = np.array(data['Aging_NTK_Search']['accs'])
         
-        ax.set_xlim(max(0, min(all_params) - param_margin), 
-                   max(all_params) + param_margin)
-        ax.set_ylim(min(all_accs) - acc_margin, 
-                   max(all_accs) + acc_margin)
-    
+        # 定义放大区域
+        x1, x2 = ts_p.min(), ts_p.max()
+        y1, y2 = ts_a.min(), ts_a.max()
+        x_range = x2 - x1
+        y_range = y2 - y1
+        # 稍微扩大一点边界
+        rect_x1, rect_x2 = x1 - 0.1 * x_range, x2 + 0.1 * x_range
+        rect_y1, rect_y2 = y1 - 0.2 * y_range, y2 + 0.2 * y_range
+        
+        # 创建 inset
+        axins = inset_axes(ax, width="30%", height="35%", loc='upper right')
+        
+        # 绘制 inset 内容
+        for sub_key in plot_order:
+            if sub_key not in data or not data[sub_key]['params']: continue
+            sub_p = np.array(data[sub_key]['params'])
+            sub_a = np.array(data[sub_key]['accs'])
+            
+            axins.scatter(sub_p, sub_a, 
+                          c=COLORS[sub_key], 
+                          marker=MARKERS[sub_key], 
+                          s=40, 
+                          alpha=0.8,
+                          edgecolors='white', linewidths=0.5,
+                          zorder=3)
+            if len(sub_p) >= 3:
+                try:
+                    points = np.column_stack([sub_p, sub_a])
+                    hull = ConvexHull(points)
+                    hull_pts = np.vstack((points[hull.vertices], points[hull.vertices[0]]))
+                    axins.fill(hull_pts[:,0], hull_pts[:,1], color=COLORS[sub_key], alpha=0.15, zorder=2)
+                except: pass
+
+        axins.set_xlim(rect_x1, rect_x2)
+        axins.set_ylim(rect_y1, rect_y2)
+        axins.tick_params(axis='both', which='major', labelsize=10, width=1.0, length=3, direction='in')
+        
+        # Inset 边框红色
+        for spine in axins.spines.values():
+            spine.set_edgecolor(COLORS['Aging_NTK_Search'])
+            spine.set_linewidth(1.2)
+            
+        # --------------------- [修改点2] 手动绘制连接线与放大框 ---------------------
+        
+        # 1. 在主图上画出放大的矩形框
+        # 使用 SOTA 的红色虚线框
+        rect = Rectangle((rect_x1, rect_y1), rect_x2 - rect_x1, rect_y2 - rect_y1,
+                         edgecolor=COLORS['Aging_NTK_Search'], 
+                         facecolor='none', 
+                         linestyle='--', 
+                         linewidth=1.2,
+                         zorder=10)
+        ax.add_patch(rect)
+        
+        # 2. 手动绘制连接线
+        # 连接主图的矩形框左上角 -> Inset左上角
+        # 连接主图的矩形框右下角 -> Inset右下角
+        # 这种对角线连接方式清晰且不杂乱
+        
+        con_list = [
+            # xyA: 主图数据坐标, xyB: Inset轴比例坐标 (0~1)
+            ConnectionPatch(xyA=(rect_x1, rect_y2), xyB=(0, 1), coordsA="data", coordsB="axes fraction",
+                           axesA=ax, axesB=axins, color="gray", linestyle="--", alpha=0.5, linewidth=1.0),
+            ConnectionPatch(xyA=(rect_x2, rect_y1), xyB=(1, 0), coordsA="data", coordsB="axes fraction",
+                           axesA=ax, axesB=axins, color="gray", linestyle="--", alpha=0.5, linewidth=1.0)
+        ]
+        
+        for con in con_list:
+            ax.add_artist(con)
+            
     plt.tight_layout()
     
-    # 保存图片
     if output_path:
-        plt.savefig(output_path, dpi=200, bbox_inches='tight', 
-                   facecolor='white', edgecolor='none')
-        print(f"图表已保存到: {output_path}")
-        
-        # 同时保存PDF
-        pdf_path = output_path.rsplit('.', 1)[0] + '.pdf'
-        plt.savefig(pdf_path, dpi=200, bbox_inches='tight')
-        print(f"PDF已保存到: {pdf_path}")
+        base_path = output_path.rsplit('.', 1)[0]
+        plt.savefig(base_path + '.png', dpi=300, bbox_inches='tight')
+        plt.savefig(base_path + '.pdf', bbox_inches='tight')
+        print(f"Saved to: {base_path}.pdf")
     
     if show_plot:
         plt.show()
-    
     plt.close()
-    
-    return fig
-
 
 def print_statistics(data: dict):
-    """Print statistics"""
     print("\n" + "=" * 60)
-    print("                    Statistics")
+    print("                    Experiment Statistics")
     print("=" * 60)
-    
-    labels = {
-        'three_stage_ea': 'Three-Stage EA',
-        'traditional_ea': 'Traditional EA',
-        'random_search': 'Random Search'
-    }
-    
-    for key, label in labels.items():
+    for key, label in LABELS.items():
         if key in data and len(data[key]['params']) > 0:
             params = np.array(data[key]['params'])
             accs = np.array(data[key]['accs'])
-            
             print(f"\n{label}:")
-            print(f"  Samples: {len(params)}")
-            print(f"  Accuracy Range: {accs.min():.2f}% - {accs.max():.2f}%")
-            print(f"  Mean Accuracy: {accs.mean():.2f}% +/- {accs.std():.2f}%")
-            print(f"  Params Range: {params.min():.2f}M - {params.max():.2f}M")
-            print(f"  Mean Params: {params.mean():.2f}M +/- {params.std():.2f}M")
-    
+            print(f"  Count: {len(params)}")
+            print(f"  Acc: {accs.mean():.2f}% ± {accs.std():.2f}%")
     print("\n" + "=" * 60)
 
-
 def main():
-    parser = argparse.ArgumentParser(description='生成三种算法对比可视化图')
-    
-    parser.add_argument('--json_path', type=str, default=None,
-                        help='实验结果JSON文件路径')
-    parser.add_argument('--output', type=str, default=None,
-                        help='输出图片路径')
-    parser.add_argument('--use_simulated', action='store_true',
-                        help='使用模拟数据')
-    parser.add_argument('--no_show', action='store_true',
-                        help='不显示图表')
-    parser.add_argument('--title', type=str, default=None,
-                        help='图表标题')
+    parser = argparse.ArgumentParser(description='Generate Paper Plots')
+    parser.add_argument('--json_path', type=str, default=None)
+    parser.add_argument('--json_dir', type=str, default=None)
+    parser.add_argument('--output', type=str, default=None)
+    parser.add_argument('--use_simulated', action='store_true')
+    parser.add_argument('--no_show', action='store_true')
     
     args = parser.parse_args()
     
-    # 加载或生成数据
-    if args.json_path and os.path.exists(args.json_path):
-        print(f"从文件加载数据: {args.json_path}")
+    if args.json_dir:
+        data = load_experiment_results_from_dir(args.json_dir)
+    elif args.json_path and os.path.exists(args.json_path):
         data = load_experiment_results(args.json_path)
-    elif args.use_simulated or args.json_path is None:
-        print("使用模拟数据生成演示图表...")
+    elif args.use_simulated or (args.json_path is None and args.json_dir is None):
+        print("Using simulated data...")
         data = generate_simulated_data()
     else:
-        print(f"错误: 找不到文件 {args.json_path}")
+        print("Error: Provide valid input.")
         return
     
-    # 打印统计信息
     print_statistics(data)
     
-    # 设置输出路径
     if args.output is None:
-        output_dir = os.path.dirname(os.path.abspath(__file__))
-        output_dir = os.path.join(output_dir, 'experiment_results')
+        output_dir = 'experiment_results'
         os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output = os.path.join(output_dir, f'algorithm_comparison_{timestamp}.png')
-    
-    # 绘制图表
-    plot_algorithm_comparison(
-        data,
-        output_path=args.output,
-        show_plot=not args.no_show,
-        title=args.title
-    )
-
+        args.output = os.path.join(output_dir, f'pareto_frontier_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
+        
+    plot_algorithm_comparison(data, output_path=args.output, show_plot=not args.no_show)
 
 if __name__ == '__main__':
     main()

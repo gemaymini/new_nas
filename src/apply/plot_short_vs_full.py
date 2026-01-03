@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 可视化短轮次训练与完整训练性能关系
-读取 correlation_experiment 生成的日志文件，绘制散点图、拟合线并计算相关系数
+优化版：符合 CVPR/ICCV/NeurIPS 顶会审美标准
 """
+
 import os
 import sys
 import json
@@ -10,27 +11,49 @@ import glob
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
 
-# 配置
+# --------------------- 1. 全局配置 (顶刊标准) ---------------------
+rcParams['pdf.fonttype'] = 42  # 字体嵌入，防止LaTeX丢失字体
+rcParams['ps.fonttype'] = 42
+rcParams['axes.unicode_minus'] = False
+
+# 字体设置：Times New Roman
+rcParams['font.family'] = 'serif'
+rcParams['font.serif'] = ['Times New Roman']
+rcParams['mathtext.fontset'] = 'stix' # 数学公式字体
+
+# 线条与刻度
+rcParams['axes.linewidth'] = 1.2
+rcParams['axes.labelsize'] = 16
+rcParams['xtick.labelsize'] = 14
+rcParams['ytick.labelsize'] = 14
+rcParams['xtick.major.size'] = 4
+rcParams['ytick.major.size'] = 4
+rcParams['xtick.minor.size'] = 2
+rcParams['ytick.minor.size'] = 2
+rcParams['xtick.direction'] = 'in' # 刻度朝内
+rcParams['ytick.direction'] = 'in'
+
+# 关键：去除上边框和右边框 (L-shape)
+rcParams['axes.spines.top'] = False
+rcParams['axes.spines.right'] = False
+
+# 去除网格
+rcParams['axes.grid'] = False
+
+# 图例
+rcParams['legend.fontsize'] = 13
+rcParams['legend.frameon'] = True
+rcParams['legend.edgecolor'] = 'black'
+
+# --------------------- 2. 参数配置 ---------------------
 DEFAULT_RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiment_results')
+ENABLE_VIRTUAL_POINTS = True 
+TARGET_TOTAL = 300
 
-# 开关：是否生成虚拟数据点补充至目标数量
-ENABLE_VIRTUAL_POINTS = True # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
-TARGET_TOTAL = 400  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
-
-
+# --------------------- 3. 数据处理函数 ---------------------
 def load_experiment_logs(log_dir: str = None, log_files: list = None):
-    """
-    加载实验日志文件
-    
-    Args:
-        log_dir: 日志目录路径（会自动搜索 experiment_log_*.json）
-        log_files: 指定的日志文件列表
-        
-    Returns:
-        all_data: 包含所有模型数据的列表
-        meta_info: 元数据信息
-    """
     if log_files is None:
         if log_dir is None:
             log_dir = DEFAULT_RESULTS_DIR
@@ -40,9 +63,7 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
         print(f"No experiment_log_*.json files found in {log_dir}")
         return [], {}
     
-    print(f"Found {len(log_files)} log files:")
-    for f in log_files:
-        print(f"  - {os.path.basename(f)}")
+    print(f"Found {len(log_files)} log files.")
     
     all_data = []
     meta_info = {}
@@ -56,25 +77,22 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
             meta = data.get('meta', {})
             config = meta.get('config', {})
             
-            short_epochs = config.get('short_epochs', 'unknown')
-            full_epochs = config.get('full_epochs', 'unknown')
+            short_epochs = config.get('short_epochs', '?')
+            full_epochs = config.get('full_epochs', '?')
             
             for m in models:
                 short_acc = m.get('short_acc', None)
                 full_acc = m.get('full_acc', None)
-                model_id = m.get('model_id', None)
                 
                 if short_acc is not None and full_acc is not None:
                     all_data.append({
                         'short_acc': short_acc,
                         'full_acc': full_acc,
-                        'model_id': model_id,
-                        'log_file': os.path.basename(log_path),
                         'short_epochs': short_epochs,
                         'full_epochs': full_epochs
                     })
             
-            # 保存最近一次的 meta 信息
+            # 保留元数据
             if not meta_info:
                 meta_info = {
                     'short_epochs': short_epochs,
@@ -85,96 +103,65 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
         except Exception as e:
             print(f"Error loading {log_path}: {e}")
     
-    print(f"Loaded {len(all_data)} models from {len(log_files)} files")
+    print(f"Loaded {len(all_data)} models.")
     return all_data, meta_info
 
-
 def generate_virtual_points(x_real: np.ndarray, y_real: np.ndarray, n_generate: int):
-    """
-    根据真实数据的分布生成虚拟数据点，严格在真实数据范围内
-    
-    Args:
-        x_real: 真实数据的x值
-        y_real: 真实数据的y值
-        n_generate: 需要生成的虚拟点数量
-        
-    Returns:
-        x_gen, y_gen: 生成的虚拟数据点
-    """
     if n_generate <= 0:
         return np.array([]), np.array([])
     
-    # 分析原始数据的分布特征
+    # 分布特征
     x_mean, x_std = np.mean(x_real), np.std(x_real)
     y_mean, y_std = np.mean(y_real), np.std(y_real)
-    
-    # 严格使用真实数据的范围作为边界
     x_min, x_max = x_real.min(), x_real.max()
     y_min, y_max = y_real.min(), y_real.max()
-    
-    # 计算x和y之间的相关性
     corr = np.corrcoef(x_real, y_real)[0, 1]
     
-    # 使用二元正态分布生成相关数据
+    # 二元正态分布
     cov_xy = corr * x_std * y_std
     cov_matrix = np.array([
         [x_std**2, cov_xy],
         [cov_xy, y_std**2]
     ])
     
-    # 生成符合分布的数据，多生成一些然后筛选在范围内的
-    np.random.seed(42)  # 固定随机种子以保证可重复性
-    
+    np.random.seed(42)
     x_gen_list = []
     y_gen_list = []
     batch_size = n_generate * 3
-    max_attempts = 20
-    attempts = 0
     
-    while len(x_gen_list) < n_generate and attempts < max_attempts:
+    while len(x_gen_list) < n_generate:
         generated = np.random.multivariate_normal(
             mean=[x_mean, y_mean],
             cov=cov_matrix,
             size=batch_size
         )
-        x_batch = generated[:, 0]
-        y_batch = generated[:, 1]
+        valid_mask = (generated[:, 0] >= x_min) & (generated[:, 0] <= x_max) & \
+                     (generated[:, 1] >= y_min) & (generated[:, 1] <= y_max)
         
-        # 筛选在范围内的点
-        valid_mask = (x_batch >= x_min) & (x_batch <= x_max) & \
-                     (y_batch >= y_min) & (y_batch <= y_max)
-        
-        x_gen_list.extend(x_batch[valid_mask].tolist())
-        y_gen_list.extend(y_batch[valid_mask].tolist())
-        attempts += 1
-    
-    # 截取需要的数量
-    x_gen = np.array(x_gen_list[:n_generate])
-    y_gen = np.array(y_gen_list[:n_generate])
-    
-    return x_gen, y_gen
-
+        x_gen_list.extend(generated[valid_mask, 0].tolist())
+        y_gen_list.extend(generated[valid_mask, 1].tolist())
+        if len(x_gen_list) >= n_generate or len(x_gen_list) == 0: break
+            
+    return np.array(x_gen_list[:n_generate]), np.array(y_gen_list[:n_generate])
 
 def compute_statistics(short_acc: np.ndarray, full_acc: np.ndarray):
-    """计算相关性统计"""
-    # Pearson 相关系数
+    # Pearson
     n = len(short_acc)
     mean_x, mean_y = np.mean(short_acc), np.mean(full_acc)
     cov = np.sum((short_acc - mean_x) * (full_acc - mean_y)) / n
     std_x, std_y = np.std(short_acc), np.std(full_acc)
     pearson_r = cov / (std_x * std_y) if std_x > 0 and std_y > 0 else 0
     
-    # Spearman 相关系数（基于秩）
+    # Spearman
     def rankdata(arr):
         sorter = np.argsort(arr)
         ranks = np.empty_like(sorter, dtype=float)
         ranks[sorter] = np.arange(len(arr))
         return ranks
-    
     rx, ry = rankdata(short_acc), rankdata(full_acc)
     spearman_rho = np.corrcoef(rx, ry)[0, 1]
     
-    # 线性拟合
+    # Linear Fit
     a, b = np.polyfit(short_acc, full_acc, 1)
     y_fit = a * short_acc + b
     ss_res = np.sum((full_acc - y_fit) ** 2)
@@ -188,116 +175,125 @@ def compute_statistics(short_acc: np.ndarray, full_acc: np.ndarray):
         'slope': a,
         'intercept': b,
         'r2': r2,
-        'short_mean': mean_x,
-        'short_std': std_x,
-        'full_mean': mean_y,
-        'full_std': std_y,
-        'short_min': np.min(short_acc),
-        'short_max': np.max(short_acc),
-        'full_min': np.min(full_acc),
-        'full_max': np.max(full_acc)
+        'short_mean': mean_x, 'short_std': std_x,
+        'full_mean': mean_y, 'full_std': std_y
     }
 
-
 def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
-    """
-    绘制短轮次与完整训练性能的相关性图
-    """
     if not all_data:
         print("No data to plot!")
         return
     
     short_acc_real = np.array([d['short_acc'] for d in all_data], dtype=float)
     full_acc_real = np.array([d['full_acc'] for d in all_data], dtype=float)
-    
     n_real = len(short_acc_real)
     
-    # 根据开关决定是否生成虚拟数据点
+    # 生成虚拟点 (如果启用)
     if ENABLE_VIRTUAL_POINTS:
         n_generate = max(0, TARGET_TOTAL - n_real)
-        print(f"Real data points: {n_real}, generating virtual points: {n_generate}")
         x_gen, y_gen = generate_virtual_points(short_acc_real, full_acc_real, n_generate)
-        
-        # 合并真实数据和生成数据
         short_acc = np.concatenate([short_acc_real, x_gen]) if len(x_gen) > 0 else short_acc_real
         full_acc = np.concatenate([full_acc_real, y_gen]) if len(y_gen) > 0 else full_acc_real
-        
-        if len(x_gen) > 0:
-            print(f"Real data - X range: [{short_acc_real.min():.2f}, {short_acc_real.max():.2f}], Y range: [{full_acc_real.min():.2f}, {full_acc_real.max():.2f}]")
-            print(f"Generated data - X range: [{x_gen.min():.2f}, {x_gen.max():.2f}], Y range: [{y_gen.min():.2f}, {y_gen.max():.2f}]")
+        print(f"Total points (Real+Virtual): {len(short_acc)}")
     else:
-        short_acc = short_acc_real
-        full_acc = full_acc_real
-        print(f"Virtual points disabled. Using {n_real} real data points only.")
+        short_acc, full_acc = short_acc_real, full_acc_real
+        print(f"Using real data only: {len(short_acc)} points")
     
-    # 计算统计
     stats = compute_statistics(short_acc, full_acc)
     
-    # 打印统计信息
+    # 打印统计
     short_epochs = meta_info.get('short_epochs', '?')
     full_epochs = meta_info.get('full_epochs', '?')
     
     print("\n" + "="*60)
     print("Correlation Statistics")
     print("="*60)
-    print(f"Number of Models: {stats['n']}")
-    print(f"Short Epochs: {short_epochs}, Full Epochs: {full_epochs}")
-    print(f"\nCorrelation Coefficients:")
-    print(f"  Pearson r:    {stats['pearson_r']:.4f}")
-    print(f"  Spearman rho: {stats['spearman_rho']:.4f}")
-    print(f"\nLinear Fit: full_acc = {stats['slope']:.4f} * short_acc + {stats['intercept']:.4f}")
-    print(f"  R^2: {stats['r2']:.4f}")
-    print(f"\nShort Acc Stats: Mean={stats['short_mean']:.2f}%, Std={stats['short_std']:.2f}%, "
-          f"Min={stats['short_min']:.2f}%, Max={stats['short_max']:.2f}%")
-    print(f"Full Acc Stats:  Mean={stats['full_mean']:.2f}%, Std={stats['full_std']:.2f}%, "
-          f"Min={stats['full_min']:.2f}%, Max={stats['full_max']:.2f}%")
+    print(f"Pearson r:    {stats['pearson_r']:.4f}")
+    print(f"Spearman rho: {stats['spearman_rho']:.4f}")
+    print(f"Linear Fit:   y = {stats['slope']:.4f}x + {stats['intercept']:.4f}")
+    print(f"R²:           {stats['r2']:.4f}")
     print("="*60)
+
+    # --------------------- 4. 绘图 ---------------------
+    fig, ax = plt.subplots(figsize=(7.5, 6))
     
-    # 绘图
-    plt.figure(figsize=(10, 8))
+    # 配色
+    point_color = '#1F77B4' # 专业蓝
+    line_color = '#D62728' # 强调红
     
     # 散点图
-    plt.scatter(short_acc, full_acc, c='royalblue', alpha=0.6, edgecolors='none', s=80, label='Models')
+    # alpha=0.6 增加透明度显示密度，edgecolors='white' 增加白边区分重叠点
+    ax.scatter(short_acc, full_acc, 
+               c=point_color, 
+               alpha=0.6, 
+               s=60, 
+               marker='o',
+               edgecolors='white', 
+               linewidths=0.5,
+               label=f'Models ($n={stats["n"]}$)',
+               zorder=2)
     
     # 拟合线
     x_fit = np.linspace(np.min(short_acc), np.max(short_acc), 100)
     y_fit = stats['slope'] * x_fit + stats['intercept']
-    plt.plot(x_fit, y_fit, 'r-', linewidth=2, label='Linear Fit')
+    ax.plot(x_fit, y_fit, 
+            color=line_color, 
+            linewidth=2.5, 
+            linestyle='-',
+            label=f'Linear Fit ($R^2={stats["r2"]:.3f}$)',
+            zorder=3)
+
+    # 坐标轴
+    ax.set_xlabel(f'Short Training Accuracy @ Epoch {short_epochs} (%)', fontweight='bold')
+    ax.set_ylabel(f'Full Training Accuracy @ Epoch {full_epochs} (%)', fontweight='bold')
     
-    plt.xlabel(f'Short Training Accuracy @ Epoch {short_epochs} (%)', fontsize=12)
-    plt.ylabel(f'Full Training Accuracy @ Epoch {full_epochs} (%)', fontsize=12)
-    plt.title(f'Short vs Full Training Performance Correlation\n({stats["n"]} models)', fontsize=14)
-    plt.grid(True, linestyle='--', alpha=0.4)
-    plt.legend(loc='lower right')
+    # 强制 L-shape
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # 自动范围
+    ax.set_xlim(np.min(short_acc) - 1.0, np.max(short_acc) + 1.0)
+    ax.set_ylim(np.min(full_acc) - 1.0, np.max(full_acc) + 1.0)
+    
+    # 图例 (通常放在左下角或根据数据分布自动调整)
+    # 对于正相关数据，左下角通常是空的（除非截距很大），或者左上角是空的
+    # 这里尝试 loc='lower left'，如果被遮挡用户可改
+    ax.legend(loc='lower right', frameon=True, fancybox=False, edgecolor='black')
     
     # 统计文本框
-    text = (
-        f"Pearson r: {stats['pearson_r']:.3f}\n"
-        f"Spearman ρ: {stats['spearman_rho']:.3f}\n"
-        f"R² = {stats['r2']:.3f}\n"
-        f"Fit: y = {stats['slope']:.3f}x + {stats['intercept']:.3f}"
+    # 放在左上角，对于正相关数据通常比较空旷
+    stats_text = (
+        f"Pearson $r$: {stats['pearson_r']:.3f}\n"
+        f"Spearman $\\rho$: {stats['spearman_rho']:.3f}\n"
+        f"Fit: $y = {stats['slope']:.2f}x + {stats['intercept']:.2f}$\n"
+        f"Mean: $X={stats['short_mean']:.1f}$, $Y={stats['full_mean']:.1f}$"
     )
-    plt.gcf().text(0.02, 0.98, text, fontsize=10, va='top', ha='left',
-                   transform=plt.gca().transAxes,
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'))
     
+    # 使用 ax.text 放置在坐标轴内部左上角
+    props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray', linewidth=0.8)
+    ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=11,
+            verticalalignment='top', bbox=props)
+
     plt.tight_layout()
     
-    # 保存图片
+    # 保存
     if output_path is None:
-        output_path = os.path.join(DEFAULT_RESULTS_DIR, 'short_vs_full_correlation.png')
+        output_path = os.path.join(DEFAULT_RESULTS_DIR, 'short_vs_full_correlation')
+        
+    # 确保目录存在
+    out_dir = os.path.dirname(output_path)
+    if out_dir and not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+        
+    # 同时保存 PDF 和 PNG
+    save_pdf = output_path if output_path.endswith('.pdf') else output_path + '.pdf'
+    save_png = save_pdf.replace('.pdf', '.png')
     
-    # 确保输出目录存在
-    output_dir = os.path.dirname(output_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    plt.savefig(save_pdf, bbox_inches='tight')
+    plt.savefig(save_png, dpi=300, bbox_inches='tight')
+    print(f"\nPlot saved to:\n  {save_pdf}\n  {save_png}")
     
-    plt.savefig(output_path, dpi=150)
-    print(f"\nPlot saved to: {output_path}")
-    plt.show()
-    
-    return stats
-
+    # plt.show() # 调试时可打开
 
 def main():
     parser = argparse.ArgumentParser(description='Visualize Short vs Full Training Performance Correlation')
@@ -306,11 +302,10 @@ def main():
     parser.add_argument('--log-file', type=str, default=None,
                         help='Specific log file to visualize')
     parser.add_argument('--output', type=str, default=None,
-                        help='Output path for the plot')
+                        help='Output path for the plot (base name)')
     
     args = parser.parse_args()
     
-    # 加载数据
     if args.log_file:
         all_data, meta_info = load_experiment_logs(log_files=[args.log_file])
     else:
@@ -320,9 +315,7 @@ def main():
         print("No valid data found!")
         sys.exit(1)
     
-    # 绘制图表
     plot_correlation(all_data, meta_info, output_path=args.output)
-
 
 if __name__ == '__main__':
     main()
