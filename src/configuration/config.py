@@ -12,7 +12,7 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE =100         # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 5000                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 10000                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
@@ -20,7 +20,7 @@ class Config:
     HISTORY_TOP_N1 = 20             # 第一轮筛选：基于NTK选择Top N1
     SHORT_TRAIN_EPOCHS = 30         # 第一轮筛选：短期训练轮数
     
-    HISTORY_TOP_N2 =  5             # 第二轮筛选：基于验证集Acc选择Top N2
+    HISTORY_TOP_N2 =  3             # 第二轮筛选：基于验证集Acc选择Top N2
     FULL_TRAIN_EPOCHS = 300         # 最终训练：完整训练轮数
     
     # ==================== 交叉算子参数 ====================
@@ -75,7 +75,7 @@ class Config:
     NTK_BATCH_SIZE = 64              
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 10000000  # 提高阈值，避免太多模型被跳过
+    NTK_PARAM_THRESHOLD = 15000000  # 提高阈值，避免太多模型被跳过
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
@@ -86,7 +86,7 @@ class Config:
     
     # ==================== ImageNet 专用参数 ====================
     IMAGENET_ROOT = './data/imagenet'  # ImageNet 数据集根目录
-    IMAGENET_BATCH_SIZE = 128           # ImageNet 批次大小（显存考虑）
+    IMAGENET_BATCH_SIZE =512           # ImageNet 批次大小（显存考虑）
     IMAGENET_INPUT_SIZE = 224          # ImageNet 输入尺寸
     IMAGENET_NUM_CLASSES = 1000        # ImageNet 类别数
     IMAGENET_LR = 0.1                  # ImageNet 初始学习率
