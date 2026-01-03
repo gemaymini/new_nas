@@ -37,8 +37,10 @@ def parse_args():
     
     # Dataset params
     parser.add_argument('--dataset', type=str, default=config.FINAL_DATASET,
-                        choices=['cifar10', 'cifar100'],
+                        choices=['cifar10', 'cifar100', 'imagenet'],
                         help='Dataset for training and evaluation (default: cifar10)')
+    parser.add_argument('--imagenet_root', type=str, default=config.IMAGENET_ROOT,
+                        help='Path to ImageNet dataset root directory')
     
     # Other params
     parser.add_argument('--seed', type=int, default=config.RANDOM_SEED)
@@ -58,13 +60,26 @@ def main():
     config.MAX_GEN = args.max_gen
     config.FINAL_DATASET = args.dataset
     
-    # Update NTK_NUM_CLASSES based on dataset
-    if args.dataset == 'cifar100':
+    # Update config based on dataset
+    if args.dataset == 'imagenet':
+        config.IMAGENET_ROOT = args.imagenet_root
+        config.NTK_NUM_CLASSES = config.IMAGENET_NUM_CLASSES
+        config.NTK_INPUT_SIZE = (3, config.IMAGENET_INPUT_SIZE, config.IMAGENET_INPUT_SIZE)
+        config.BATCH_SIZE = config.IMAGENET_BATCH_SIZE
+        config.INPUT_IMAGE_SIZE = config.IMAGENET_INPUT_SIZE
+        config.SHORT_TRAIN_EPOCHS = config.IMAGENET_SHORT_EPOCHS
+        config.FULL_TRAIN_EPOCHS = config.IMAGENET_EPOCHS
+        # ImageNet 使用更大的初始卷积 stride
+        config.INIT_CONV_KERNEL_SIZE = 7
+        config.INIT_CONV_STRIDE = 2
+        config.INIT_CONV_PADDING = 3
+    elif args.dataset == 'cifar100':
         config.NTK_NUM_CLASSES = 100
     else:
         config.NTK_NUM_CLASSES = 10
     
     logger.info(f"Dataset: {config.FINAL_DATASET}, Num Classes: {config.NTK_NUM_CLASSES}")
+    logger.info(f"Input Size: {config.NTK_INPUT_SIZE}")
     
     if config.DEVICE == 'cuda' and not torch.cuda.is_available():
         logger.warning("CUDA not available, falling back to CPU")

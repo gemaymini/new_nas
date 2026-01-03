@@ -27,12 +27,14 @@ class NTKEvaluator:
                  batch_size: int = None,
                  device: str = None,
                  recalbn: int = 0,
-                 num_batch: int = 1):
+                 num_batch: int = 1,
+                 dataset: str = None):
         self.input_size = input_size or config.NTK_INPUT_SIZE
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
         self.device = device or config.DEVICE
         self.param_threshold = config.NTK_PARAM_THRESHOLD
+        self.dataset = dataset or config.FINAL_DATASET
 
         self.recalbn = recalbn        # 重置并重新统计 BN 的 batch 数
         self.num_batch = num_batch    # 使用多少个 batch 计算 NTK
@@ -42,7 +44,8 @@ class NTKEvaluator:
 
         # 加载用于 NTK 计算的小数据集 loader
         self.trainloader = DatasetLoader.get_ntk_trainloader(
-            batch_size=self.batch_size
+            batch_size=self.batch_size,
+            dataset_name=self.dataset
         )
 
     def recal_bn(self, network: nn.Module, xloader, recal_batches: int, device):
@@ -198,6 +201,9 @@ class FinalEvaluator:
         elif dataset == 'cifar100':
             self.trainloader, self.testloader = DatasetLoader.get_cifar100()
             self.num_classes = 100
+        elif dataset == 'imagenet':
+            self.trainloader, self.testloader = DatasetLoader.get_imagenet()
+            self.num_classes = config.IMAGENET_NUM_CLASSES
         else:
             raise ValueError(f"Unknown dataset: {dataset}")
 

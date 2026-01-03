@@ -84,6 +84,15 @@ class Config:
     MOMENTUM = 0.9                  
     WEIGHT_DECAY = 5e-4             
     
+    # ==================== ImageNet 专用参数 ====================
+    IMAGENET_ROOT = './data/imagenet'  # ImageNet 数据集根目录
+    IMAGENET_BATCH_SIZE = 64           # ImageNet 批次大小（显存考虑）
+    IMAGENET_INPUT_SIZE = 224          # ImageNet 输入尺寸
+    IMAGENET_NUM_CLASSES = 1000        # ImageNet 类别数
+    IMAGENET_LR = 0.1                  # ImageNet 初始学习率
+    IMAGENET_EPOCHS = 300               # ImageNet 完整训练轮数
+    IMAGENET_SHORT_EPOCHS = 30          # ImageNet 短期训练轮数
+    
     # ==================== 最终评估参数 ====================
     FINAL_DATASET = 'cifar10'       
     
