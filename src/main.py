@@ -81,6 +81,10 @@ def main():
     logger.info(f"Dataset: {config.FINAL_DATASET}, Num Classes: {config.NTK_NUM_CLASSES}")
     logger.info(f"Input Size: {config.NTK_INPUT_SIZE}")
     
+    # 重置全局评估器，确保使用更新后的配置
+    from engine.evaluator import fitness_evaluator
+    fitness_evaluator.reset()
+    
     if config.DEVICE == 'cuda' and not torch.cuda.is_available():
         logger.warning("CUDA not available, falling back to CPU")
         config.DEVICE = 'cpu'

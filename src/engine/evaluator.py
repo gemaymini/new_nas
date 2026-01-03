@@ -377,7 +377,19 @@ class FinalEvaluator:
 
 class FitnessEvaluator:
     def __init__(self):
-        self.ntk_evaluator = NTKEvaluator()
+        # 延迟初始化，避免模块导入时就加载数据集
+        self._ntk_evaluator = None
+
+    @property
+    def ntk_evaluator(self):
+        """延迟加载 NTKEvaluator，使用当前 config 配置"""
+        if self._ntk_evaluator is None:
+            self._ntk_evaluator = NTKEvaluator(dataset=config.FINAL_DATASET)
+        return self._ntk_evaluator
+
+    def reset(self):
+        """重置评估器，用于切换数据集后重新初始化"""
+        self._ntk_evaluator = None
 
     def evaluate_individual(self, individual: Individual) -> float:
         """评估单个个体的 NTK Fitness"""
