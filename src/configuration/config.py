@@ -86,7 +86,7 @@ class Config:
     
     # ==================== ImageNet 专用参数 ====================
     IMAGENET_ROOT = './data/imagenet'  # ImageNet 数据集根目录
-    IMAGENET_BATCH_SIZE = 64           # ImageNet 批次大小（显存考虑）
+    IMAGENET_BATCH_SIZE = 128           # ImageNet 批次大小（显存考虑）
     IMAGENET_INPUT_SIZE = 224          # ImageNet 输入尺寸
     IMAGENET_NUM_CLASSES = 1000        # ImageNet 类别数
     IMAGENET_LR = 0.1                  # ImageNet 初始学习率
