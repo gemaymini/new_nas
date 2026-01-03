@@ -82,7 +82,12 @@ class Config:
     BATCH_SIZE = 128             
     LEARNING_RATE = 0.1             
     MOMENTUM = 0.9                  
-    WEIGHT_DECAY = 5e-4             
+    WEIGHT_DECAY = 5e-4
+    
+    # ==================== 早停参数 ====================
+    EARLY_STOPPING_ENABLED = True   # 是否启用早停
+    EARLY_STOPPING_PATIENCE = 30    # 早停耐心值（连续多少轮无提升则停止）
+    EARLY_STOPPING_MIN_DELTA = 0.01 # 最小提升阈值（%），低于此值不算提升             
     
     # ==================== ImageNet 专用参数 ====================
     IMAGENET_ROOT = './data/imagenet'  # ImageNet 数据集根目录

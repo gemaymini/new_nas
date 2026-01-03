@@ -81,11 +81,18 @@ class NetworkTrainer:
     def train_network(self, model: nn.Module, trainloader: DataLoader,
                      testloader: DataLoader, epochs: int = None,
                      lr: float = None, momentum: float = None,
-                     weight_decay: float = None) -> Tuple[float, List[dict]]:
+                     weight_decay: float = None,
+                     early_stopping: bool = None) -> Tuple[float, List[dict]]:
         if epochs is None: epochs = config.FULL_TRAIN_EPOCHS
         if lr is None: lr = config.LEARNING_RATE
         if momentum is None: momentum = config.MOMENTUM
         if weight_decay is None: weight_decay = config.WEIGHT_DECAY
+        if early_stopping is None: early_stopping = config.EARLY_STOPPING_ENABLED
+        
+        # 早停参数
+        patience = config.EARLY_STOPPING_PATIENCE
+        min_delta = config.EARLY_STOPPING_MIN_DELTA
+        patience_counter = 0
         
         # Clear cache before training
         if self.device == 'cuda':
@@ -118,12 +125,24 @@ class NetworkTrainer:
                     'lr': optimizer.param_groups[0]['lr']
                 })
                 
-                if test_acc > best_acc:
+                # 检查是否有显著提升
+                if test_acc > best_acc + min_delta:
                     best_acc = test_acc
                     best_model_wts = copy.deepcopy(model.state_dict())
+                    patience_counter = 0  # 重置计数器
+                else:
+                    patience_counter += 1
                 
+                # 早停状态显示
+                es_info = f' | ES: {patience_counter}/{patience}' if early_stopping else ''
                 print(f'  [Epoch {epoch}/{epochs}] Train Acc: {train_acc:.2f}% | '
-                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%')
+                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%{es_info}')
+                
+                # 早停检查
+                if early_stopping and patience_counter >= patience:
+                    logger.info(f'Early stopping triggered at epoch {epoch}. '
+                               f'Best accuracy: {best_acc:.2f}%')
+                    break
                       
         except RuntimeError as e:
             if 'out of memory' in str(e):
