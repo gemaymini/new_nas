@@ -264,9 +264,9 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             # A. Calculate NTK
             print(f"Calculating NTK for model {i}...")
             ntk_evaluator.evaluate_individual(ind)
-            ntk_cond = ind.fitness  # fitness 直接等于 NTK 条件数（越小越好）
+            ntk_cond = ind.ntk_score  # 使用原始 NTK 条件数（越小越好）
                 
-            print(f"Model {i}: NTK Cond={ntk_cond:.2f}")
+            print(f"Model {i}: NTK Cond={ntk_cond:.2f}, Fitness={ind.fitness:.6f}")
             
             # B. Short Training
             network = NetworkBuilder.build_from_individual(

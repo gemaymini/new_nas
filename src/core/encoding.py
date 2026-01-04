@@ -2,8 +2,8 @@
 """
 神经网络架构搜索算法 - 编码模块
 实现变长编码策略
+职责：编解码、验证（随机生成逻辑统一由 search_space.py 提供）
 """
-import random
 import copy
 from typing import List, Tuple, Optional
 from configuration.config import config
@@ -65,56 +65,29 @@ class Individual:
         self.encoding = encoding if encoding is not None else []
         self.quick_score=0
         # 评估属性
-        self.fitness = None
+        self.fitness = None        # 综合加权适应度
+        self.ntk_score = None      # NTK 条件数原始值
+        self.param_count = None    # 参数量
         
     def copy(self) -> 'Individual':
         new_ind = Individual(copy.deepcopy(self.encoding))
         new_ind.fitness = self.fitness
+        new_ind.ntk_score = self.ntk_score
+        new_ind.param_count = self.param_count
+        new_ind.quick_score = self.quick_score
         return new_ind
     
     def __repr__(self):
-        return f"Individual(id={self.id}, fitness={self.fitness}, encoding_len={len(self.encoding)})"
+        ntk_str = f"{self.ntk_score:.2f}" if self.ntk_score is not None else "None"
+        fitness_str = f"{self.fitness:.6f}" if self.fitness is not None else "None"
+        param_str = f"{self.param_count:,}" if self.param_count is not None else "None"
+        return f"Individual(id={self.id}, fitness={fitness_str}, ntk={ntk_str}, params={param_str})"
 
 class Encoder:
     """
     编码器类
+    职责：编解码、验证（随机生成逻辑统一由 SearchSpace 提供）
     """
-    @staticmethod
-    def random_block_params() -> BlockParams:
-        out_channels = random.choice(config.CHANNEL_OPTIONS)
-        # 确保 groups <= out_channels 且 out_channels % groups == 0
-        valid_groups = [g for g in config.GROUP_OPTIONS if g <= out_channels and out_channels % g == 0]
-        groups = random.choice(valid_groups) if valid_groups else 1
-        pool_type = random.choice(config.POOL_TYPE_OPTIONS)
-        pool_stride = random.choice(config.POOL_STRIDE_OPTIONS)
-        has_senet = random.choice(config.SENET_OPTIONS)
-        # 新增参数
-        activation_type = random.choice(config.ACTIVATION_OPTIONS)
-        dropout_rate = random.choice(config.DROPOUT_OPTIONS)
-        skip_type = random.choice(config.SKIP_TYPE_OPTIONS)
-        kernel_size = random.choice(config.KERNEL_SIZE_OPTIONS)
-        
-        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
-                           activation_type, dropout_rate, skip_type, kernel_size)
-    
-    @staticmethod
-    def create_random_encoding() -> List[int]:
-        unit_num = random.randint(config.MIN_UNIT_NUM, config.MAX_UNIT_NUM)
-        encoding = [unit_num]
-        
-        block_nums = []
-        for _ in range(unit_num):
-            block_num = random.randint(config.MIN_BLOCK_NUM, config.MAX_BLOCK_NUM)
-            block_nums.append(block_num)
-            encoding.append(block_num)
-        
-        for block_num in block_nums:
-            for _ in range(block_num):
-                block_params = Encoder.random_block_params()
-                encoding.extend(block_params.to_list())
-        
-        return encoding
-    
     @staticmethod
     def decode(encoding: List[int]) -> Tuple[int, List[int], List[List[BlockParams]]]:
         if not encoding:

@@ -12,22 +12,20 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE =100         # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 5000                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 100                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
     # ==================== 筛选与训练流程参数 ====================
-    HISTORY_TOP_N1 = 10             # 第一轮筛选：基于NTK选择Top N1
-    SHORT_TRAIN_EPOCHS = 30         # 第一轮筛选：短期训练轮数
+    HISTORY_TOP_N1 = 5             # 第一轮筛选：基于NTK选择Top N1
+    SHORT_TRAIN_EPOCHS = 10         # 第一轮筛选：短期训练轮数
     
     HISTORY_TOP_N2 =  1             # 第二轮筛选：基于验证集Acc选择Top N2
-    FULL_TRAIN_EPOCHS = 300         # 最终训练：完整训练轮数
+    FULL_TRAIN_EPOCHS = 50         # 最终训练：完整训练轮数
     
     # ==================== 交叉算子参数 ====================
     PROB_CROSSOVER = 0.5            # 交叉概率 (0.8)
     PROB_MUTATION = 0.5            # 变异概率 (0.1)
-    
-    # ==================== 搜索空间参数 ====================
     
     # ==================== 搜索空间参数 ====================
     MIN_UNIT_NUM = 3                # 最小unit数量
@@ -75,7 +73,18 @@ class Config:
     NTK_BATCH_SIZE = 64              
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
-    NTK_PARAM_THRESHOLD = 15000000  # 提高阈值，避免太多模型被跳过
+    NTK_PARAM_THRESHOLD = 10000000  # 提高阈值，避免太多模型被跳过
+    
+    # ==================== 多目标优化配置 ====================
+    # 加权适应度: fitness = w_ntk * norm_ntk + w_param * norm_param
+    MULTI_OBJ_WEIGHT_NTK = 0.8       # NTK 条件数权重
+    MULTI_OBJ_WEIGHT_PARAM = 0.2     # 参数量权重
+    
+    # 归一化参数（用于将不同量纲的目标归一化到 [0, 1]）
+    NTK_NORMALIZE_MAX = 10000.0      # NTK 条件数归一化上限
+    NTK_NORMALIZE_MIN = 1.0          # NTK 条件数归一化下限
+    PARAM_NORMALIZE_MAX = 10000000   # 参数量归一化上限 (10M)
+    PARAM_NORMALIZE_MIN = 100000     # 参数量归一化下限 (100K)
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 

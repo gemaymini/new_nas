@@ -62,10 +62,8 @@ class RegBlock(nn.Module):
         self.mid_channels = block_params.out_channels
         self.pool_stride = block_params.pool_stride
         # 输出通道数 = 中间通道数 × expansion
-        # 当 EXPANSION=1 时，out_channels = mid_channels，与原逻辑兼容
-        # 当 EXPANSION=2 时，类似 ResNeXt 的扩展方式
         self.out_channels = self.mid_channels * config.EXPANSION
-        self.groups = min(block_params.groups, self.mid_channels)
+        self.groups = block_params.groups  # 已在 search_space/encoding 中验证
         self.has_senet = block_params.has_senet == 1
         
         # 新增参数
@@ -81,9 +79,6 @@ class RegBlock(nn.Module):
         else:
             self.final_out_channels = self.out_channels
         
-        while self.mid_channels % self.groups != 0:
-            self.groups = self.groups // 2 if self.groups > 1 else 1
-            
         self.conv1 = nn.Conv2d(in_channels, self.mid_channels, 
                                kernel_size=1, stride=1, padding=0, bias=False)
         self.bn1 = nn.BatchNorm2d(self.mid_channels)
@@ -263,17 +258,3 @@ class NetworkBuilder:
         network = NetworkBuilder.build_from_encoding(encoding, input_channels, num_classes)
         return network.get_param_count()
     
-    @staticmethod
-    def test_forward(encoding: List[int], input_size: tuple = None) -> bool:
-        if input_size is None:
-            input_size = config.NTK_INPUT_SIZE
-        try:
-            network = NetworkBuilder.build_from_encoding(encoding)
-            network.eval()
-            x = torch.randn(1, *input_size)
-            with torch.no_grad():
-                network(x)
-            return True
-        except Exception as e:
-            logger.error(f"Forward test failed: {e}")
-            return False

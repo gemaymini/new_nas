@@ -101,6 +101,8 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
         'encoding': encoding,
         'accuracy': best_acc,
         'param_count': checkpoint.get('param_count', network.get_param_count()),
+        'fitness': checkpoint.get('fitness', None),
+        'ntk_score': checkpoint.get('ntk_score', None),
         'history': full_history
     }
     

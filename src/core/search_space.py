@@ -85,12 +85,16 @@ class SearchSpace:
         return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
                            activation_type, dropout_rate, skip_type, kernel_size)
 
+
+# Global instance
+search_space = SearchSpace()
+
+
 class PopulationInitializer:
     """
     种群初始化器
+    直接使用全局 search_space 实例
     """
-    def __init__(self, search_space: SearchSpace):
-        self.search_space = search_space
     
     def create_valid_individual(self, max_attempts: int = 1000) -> Optional[Individual]:
         for _ in range(max_attempts):
@@ -99,17 +103,15 @@ class PopulationInitializer:
                 return Individual(encoding)
         logger.warning(f"Failed to create valid individual after {max_attempts} attempts")
         return None
-
-            
     
     def _create_constrained_encoding(self) -> List[int]:
         max_downsampling = Encoder.get_max_downsampling()
-        unit_num = self.search_space.sample_unit_num()
+        unit_num = search_space.sample_unit_num()
         encoding = [unit_num]
         block_nums = []
         
         for _ in range(unit_num):
-            block_num = self.search_space.sample_block_num()
+            block_num = search_space.sample_block_num()
             block_nums.append(block_num)
             encoding.append(block_num)
         
@@ -117,7 +119,7 @@ class PopulationInitializer:
         
         for block_num in block_nums:
             for _ in range(block_num):
-                block_params = self.search_space.sample_block_params()
+                block_params = search_space.sample_block_params()
                 
                 if downsampling_count >= max_downsampling and block_params.pool_stride == 2:
                     block_params.pool_stride = 1
@@ -128,6 +130,6 @@ class PopulationInitializer:
         
         return encoding
 
-# Global instances
-search_space = SearchSpace()
-population_initializer = PopulationInitializer(search_space)
+
+# Global instance
+population_initializer = PopulationInitializer()

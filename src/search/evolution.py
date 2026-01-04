@@ -31,9 +31,9 @@ class AgingEvolutionNAS:
         self.history: List[Individual] = []
         self.lock = threading.Lock()
         
-        # NTK历史记录，用于绘制NTK曲线
-        # 格式: [(step, individual_id, ntk_value, encoding), ...]
-        self.ntk_history: List[Tuple[int, int, float, list]] = []
+        # 搜索历史记录，用于分析和绘制曲线
+        # 格式: [(step, individual_id, ntk_value, fitness, param_count, encoding), ...]
+        self.ntk_history: List[Tuple[int, int, float, float, int, list]] = []
         
         self.start_time = time.time()
         
@@ -63,9 +63,9 @@ class AgingEvolutionNAS:
             self.population.append(ind)
             self.history.append(ind)
             
-            # 记录NTK值
+            # 记录评估结果
             step = 0  # 初始化阶段step=0
-            self.ntk_history.append((step, ind.id, ind.fitness, ind.encoding.copy()))
+            self.ntk_history.append((step, ind.id, ind.ntk_score, ind.fitness, ind.param_count, ind.encoding.copy()))
             
             if len(self.population) % 10 == 0:
                 logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
@@ -121,7 +121,7 @@ class AgingEvolutionNAS:
         return child
 
     def _repair_individual(self, ind: Individual, parents: List[Individual]) -> Individual:
-        for _ in range(20):
+        for _ in range(1000):
             ind = mutation_operator.mutate(random.choice(parents))
             if Encoder.validate_encoding(ind.encoding): return ind
         return random.choice(parents).copy()
@@ -148,8 +148,8 @@ class AgingEvolutionNAS:
         # 当前step（进化代数）
         current_step = len(self.history) - len(self.population) + 1
         
-        # 记录NTK值
-        self.ntk_history.append((current_step, child.id, child.fitness, child.encoding.copy()))
+        # 记录评估结果
+        self.ntk_history.append((current_step, child.id, child.ntk_score, child.fitness, child.param_count, child.encoding.copy()))
         
         # 4. Atomic Update
         with self.lock:
@@ -194,9 +194,11 @@ class AgingEvolutionNAS:
         logger.info(f"Search completed. Search time: {self._format_time(self.search_time)}")
         self.save_checkpoint()
         
-        # 搜索结束后绘制NTK曲线
+        # 搜索结束后保存历史并绘制可视化图
         self._save_ntk_history()
         self.plot_ntk_curve()
+        self.plot_fitness_curve()
+        self.plot_param_fitness_correlation()
 
     def run_screening_and_training(self):
         """
@@ -283,9 +285,9 @@ class AgingEvolutionNAS:
         return best_final_ind
 
     def _record_statistics(self):
-        # 排除极差的 fitness（100000）来计算平均值
+        # fitness 现在是归一化后的加权值，范围 [0, 1]，1.0 表示最差
         fitnesses = [ind.fitness for ind in self.population if ind.fitness is not None]
-        valid_fitnesses = [f for f in fitnesses if f < 100000.0]
+        valid_fitnesses = [f for f in fitnesses if f < 1.0]  # 排除失败的个体（fitness=1.0）
         
         if valid_fitnesses:
             avg_fitness = sum(valid_fitnesses) / len(valid_fitnesses)
@@ -359,11 +361,19 @@ class AgingEvolutionNAS:
         
         # 转换为可序列化格式
         data = []
-        for step, ind_id, ntk_value, encoding in self.ntk_history:
+        for record in self.ntk_history:
+            # 兼容旧格式 (4元素) 和新格式 (6元素)
+            if len(record) == 4:
+                step, ind_id, ntk_value, encoding = record
+                fitness, param_count = None, None
+            else:
+                step, ind_id, ntk_value, fitness, param_count, encoding = record
             data.append({
                 'step': step,
                 'individual_id': ind_id,
                 'ntk': ntk_value if ntk_value is not None else None,
+                'fitness': fitness if fitness is not None else None,
+                'param_count': param_count if param_count is not None else None,
                 'encoding': encoding
             })
         
@@ -388,10 +398,14 @@ class AgingEvolutionNAS:
                 os.makedirs(config.LOG_DIR)
             output_path = os.path.join(config.LOG_DIR, 'ntk_curve.png')
         
-        # 提取数据
+        # 提取数据（兼容新旧格式）
         steps = []
         ntk_values = []
-        for step, ind_id, ntk, encoding in self.ntk_history:
+        for record in self.ntk_history:
+            if len(record) == 4:  # 旧格式
+                step, ind_id, ntk, encoding = record
+            else:  # 新格式
+                step, ind_id, ntk, fitness, param_count, encoding = record
             if ntk is not None and ntk < 100000:  # 排除无效值
                 steps.append(step)
                 ntk_values.append(ntk)
@@ -433,7 +447,11 @@ class AgingEvolutionNAS:
         # 3. 按step分组的最佳NTK曲线
         ax3 = axes[1, 0]
         step_best = {}
-        for step, ind_id, ntk, encoding in self.ntk_history:
+        for record in self.ntk_history:
+            if len(record) == 4:  # 旧格式
+                step, ind_id, ntk, encoding = record
+            else:  # 新格式
+                step, ind_id, ntk, fitness, param_count, encoding = record
             if ntk is not None and ntk < 100000:
                 if step not in step_best or ntk < step_best[step]:
                     step_best[step] = ntk
@@ -476,6 +494,206 @@ class AgingEvolutionNAS:
         # 打印统计信息
         logger.info(f"NTK Statistics: Total={len(ntk_values)}, Best={min(ntk_values):.4f}, "
                    f"Mean={sum(ntk_values)/len(ntk_values):.4f}, Worst={max(ntk_values):.4f}")
+
+    def plot_fitness_curve(self, output_path: str = None):
+        """
+        绘制搜索过程中Fitness值的变化曲线
+        包括：
+        1. 所有个体的Fitness散点图
+        2. 滑动窗口平均Fitness曲线
+        3. 累积最佳Fitness曲线
+        4. Fitness分布直方图
+        """
+        if not self.ntk_history:
+            logger.warning("No history to plot fitness!")
+            return
+        
+        if output_path is None:
+            if not os.path.exists(config.LOG_DIR):
+                os.makedirs(config.LOG_DIR)
+            output_path = os.path.join(config.LOG_DIR, 'fitness_curve.png')
+        
+        # 提取数据（仅支持新格式，旧格式无 fitness）
+        steps = []
+        fitness_values = []
+        param_counts = []
+        for record in self.ntk_history:
+            if len(record) == 6:  # 新格式
+                step, ind_id, ntk, fitness, param_count, encoding = record
+                if fitness is not None and fitness < 1.0:  # 排除无效值
+                    steps.append(step)
+                    fitness_values.append(fitness)
+                    if param_count is not None:
+                        param_counts.append(param_count)
+        
+        if not steps:
+            logger.warning("No valid Fitness values to plot! (需要新格式的历史记录)")
+            return
+        
+        # 创建图形
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle('Fitness Evolution During Search', fontsize=14, fontweight='bold')
+        
+        # 1. 所有个体的Fitness散点图
+        ax1 = axes[0, 0]
+        ax1.scatter(steps, fitness_values, alpha=0.3, s=10, c='purple')
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('Fitness (lower is better)')
+        ax1.set_title('All Individuals Fitness Values')
+        ax1.grid(True, alpha=0.3)
+        
+        # 2. 滑动窗口平均Fitness曲线
+        ax2 = axes[0, 1]
+        window_size = max(10, len(fitness_values) // 50)  # 动态窗口大小
+        if len(fitness_values) >= window_size:
+            moving_avg = []
+            for i in range(len(fitness_values) - window_size + 1):
+                avg = sum(fitness_values[i:i+window_size]) / window_size
+                moving_avg.append(avg)
+            moving_avg_steps = steps[window_size-1:]
+            ax2.plot(moving_avg_steps, moving_avg, 'r-', linewidth=2, label=f'Moving Avg (window={window_size})')
+            ax2.scatter(steps, fitness_values, alpha=0.2, s=5, c='purple', label='Individual Fitness')
+            ax2.legend()
+        else:
+            ax2.scatter(steps, fitness_values, alpha=0.5, s=10, c='purple')
+        ax2.set_xlabel('Step')
+        ax2.set_ylabel('Fitness (lower is better)')
+        ax2.set_title('Fitness with Moving Average')
+        ax2.grid(True, alpha=0.3)
+        
+        # 3. 按step分组的最佳Fitness曲线
+        ax3 = axes[1, 0]
+        step_best = {}
+        for record in self.ntk_history:
+            if len(record) == 6:  # 新格式
+                step, ind_id, ntk, fitness, param_count, encoding = record
+                if fitness is not None and fitness < 1.0:
+                    if step not in step_best or fitness < step_best[step]:
+                        step_best[step] = fitness
+        
+        sorted_steps = sorted(step_best.keys())
+        best_fitness_per_step = [step_best[s] for s in sorted_steps]
+        
+        # 累积最佳
+        cumulative_best = []
+        current_best = float('inf')
+        for f in best_fitness_per_step:
+            current_best = min(current_best, f)
+            cumulative_best.append(current_best)
+        
+        ax3.plot(sorted_steps, best_fitness_per_step, 'g-', alpha=0.5, label='Best per Step')
+        ax3.plot(sorted_steps, cumulative_best, 'r-', linewidth=2, label='Cumulative Best')
+        ax3.set_xlabel('Step')
+        ax3.set_ylabel('Fitness (lower is better)')
+        ax3.set_title('Best Fitness Progress')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. Fitness分布直方图
+        ax4 = axes[1, 1]
+        ax4.hist(fitness_values, bins=50, alpha=0.7, color='purple', edgecolor='black')
+        best_fitness = min(fitness_values)
+        mean_fitness = sum(fitness_values) / len(fitness_values)
+        ax4.axvline(best_fitness, color='r', linestyle='--', linewidth=2, label=f'Best: {best_fitness:.4f}')
+        ax4.axvline(mean_fitness, color='g', linestyle='--', linewidth=2, label=f'Mean: {mean_fitness:.4f}')
+        ax4.set_xlabel('Fitness (lower is better)')
+        ax4.set_ylabel('Count')
+        ax4.set_title('Fitness Distribution')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"Fitness curve saved to {output_path}")
+        
+        # 打印统计信息
+        logger.info(f"Fitness Statistics: Total={len(fitness_values)}, Best={best_fitness:.6f}, "
+                   f"Mean={mean_fitness:.6f}, Worst={max(fitness_values):.6f}")
+
+    def plot_param_fitness_correlation(self, output_path: str = None):
+        """
+        绘制参数量与Fitness的相关性图
+        包括：
+        1. 参数量 vs Fitness 散点图
+        2. 参数量 vs NTK 散点图
+        3. 参数量分布直方图
+        4. 三维关系图 (参数量, NTK, Fitness)
+        """
+        if not self.ntk_history:
+            logger.warning("No history to plot!")
+            return
+        
+        if output_path is None:
+            if not os.path.exists(config.LOG_DIR):
+                os.makedirs(config.LOG_DIR)
+            output_path = os.path.join(config.LOG_DIR, 'param_fitness_correlation.png')
+        
+        # 提取数据（仅支持新格式）
+        param_counts = []
+        fitness_values = []
+        ntk_values = []
+        for record in self.ntk_history:
+            if len(record) == 6:
+                step, ind_id, ntk, fitness, param_count, encoding = record
+                if fitness is not None and param_count is not None and ntk is not None:
+                    if fitness < 1.0 and ntk < 100000:
+                        param_counts.append(param_count / 1e6)  # 转为百万
+                        fitness_values.append(fitness)
+                        ntk_values.append(ntk)
+        
+        if not param_counts:
+            logger.warning("No valid data for correlation plot!")
+            return
+        
+        # 创建图形
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle('Parameter Count vs Fitness/NTK Correlation', fontsize=14, fontweight='bold')
+        
+        # 1. 参数量 vs Fitness 散点图
+        ax1 = axes[0, 0]
+        scatter1 = ax1.scatter(param_counts, fitness_values, alpha=0.5, s=15, c=ntk_values, cmap='viridis')
+        ax1.set_xlabel('Parameter Count (M)')
+        ax1.set_ylabel('Fitness (lower is better)')
+        ax1.set_title('Params vs Fitness (color=NTK)')
+        ax1.grid(True, alpha=0.3)
+        plt.colorbar(scatter1, ax=ax1, label='NTK')
+        
+        # 2. 参数量 vs NTK 散点图
+        ax2 = axes[0, 1]
+        scatter2 = ax2.scatter(param_counts, ntk_values, alpha=0.5, s=15, c=fitness_values, cmap='plasma')
+        ax2.set_xlabel('Parameter Count (M)')
+        ax2.set_ylabel('NTK Condition Number')
+        ax2.set_title('Params vs NTK (color=Fitness)')
+        ax2.grid(True, alpha=0.3)
+        plt.colorbar(scatter2, ax=ax2, label='Fitness')
+        
+        # 3. 参数量分布直方图
+        ax3 = axes[1, 0]
+        ax3.hist(param_counts, bins=50, alpha=0.7, color='orange', edgecolor='black')
+        mean_params = sum(param_counts) / len(param_counts)
+        ax3.axvline(mean_params, color='r', linestyle='--', linewidth=2, label=f'Mean: {mean_params:.2f}M')
+        ax3.set_xlabel('Parameter Count (M)')
+        ax3.set_ylabel('Count')
+        ax3.set_title('Parameter Count Distribution')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. NTK vs Fitness 散点图（颜色=参数量）
+        ax4 = axes[1, 1]
+        scatter4 = ax4.scatter(ntk_values, fitness_values, alpha=0.5, s=15, c=param_counts, cmap='coolwarm')
+        ax4.set_xlabel('NTK Condition Number')
+        ax4.set_ylabel('Fitness (lower is better)')
+        ax4.set_title('NTK vs Fitness (color=Params)')
+        ax4.grid(True, alpha=0.3)
+        plt.colorbar(scatter4, ax=ax4, label='Params (M)')
+        
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"Param-Fitness correlation plot saved to {output_path}")
 
     def _format_time(self, seconds: float) -> str:
         """

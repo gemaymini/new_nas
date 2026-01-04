@@ -187,10 +187,15 @@ class ThreeStageEA:
             eval_count += 1
             
             if eval_count % 50 == 0:
+                # fitness 现在是归一化值 [0, 1]，1.0 表示最差
                 valid_fitnesses = [ind.fitness for ind in self.history 
-                                   if ind.fitness is not None and ind.fitness < 100000]
-                best_ntk = min(valid_fitnesses) if valid_fitnesses else float('inf')
-                logger.info(f"  Evolution progress: {eval_count}/{self.max_evaluations}, Best NTK: {best_ntk:.2f}")
+                                   if ind.fitness is not None and ind.fitness < 1.0]
+                best_fitness = min(valid_fitnesses) if valid_fitnesses else float('inf')
+                # 同时显示最优 NTK 条件数
+                valid_ntks = [ind.ntk_score for ind in self.history 
+                              if ind.ntk_score is not None and ind.ntk_score < 100000]
+                best_ntk = min(valid_ntks) if valid_ntks else float('inf')
+                logger.info(f"  Evolution progress: {eval_count}/{self.max_evaluations}, Best Fitness: {best_fitness:.4f}, Best NTK: {best_ntk:.2f}")
                 clear_gpu_memory()
         
         logger.info(f"Stage 1 completed: Evaluated {len(self.history)} architectures")
@@ -245,7 +250,7 @@ class ThreeStageEA:
                     individual=ind,
                     param_count=param_count,
                     accuracy=acc,
-                    ntk_score=ind.fitness
+                    ntk_score=ind.ntk_score  # 使用原始 NTK 条件数
                 )
                 self.final_models.append(model_info)
                 logger.info(f"    Accuracy: {acc:.2f}%, Params: {param_count:.2f}M")

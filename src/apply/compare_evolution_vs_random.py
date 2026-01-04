@@ -62,13 +62,13 @@ class RandomSearch:
             fitness_evaluator.evaluate_individual(ind)
             self.history.append(ind)
             
-            # 记录当前个体的NTK值
-            current_fitness = ind.fitness if ind.fitness is not None else 100000
-            self.all_fitness_values.append(current_fitness)
+            # 记录当前个体的 NTK 值（使用原始 ntk_score）
+            current_ntk = ind.ntk_score if ind.ntk_score is not None else 100000
+            self.all_fitness_values.append(current_ntk)
             
-            # 更新最佳fitness（越小越好）
-            if ind.fitness is not None and ind.fitness < 100000:
-                best_fitness = min(best_fitness, ind.fitness)
+            # 更新最佳 NTK（越小越好）
+            if ind.ntk_score is not None and ind.ntk_score < 100000:
+                best_fitness = min(best_fitness, ind.ntk_score)
             
             self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 100000)
             
@@ -155,12 +155,12 @@ class AgingEvolutionSearch:
             self.population.append(ind)
             self.history.append(ind)
             
-            # 记录当前个体的NTK值
-            current_fitness = ind.fitness if ind.fitness is not None else 100000
-            self.all_fitness_values.append(current_fitness)
+            # 记录当前个体的 NTK 值（使用原始 ntk_score）
+            current_ntk = ind.ntk_score if ind.ntk_score is not None else 100000
+            self.all_fitness_values.append(current_ntk)
             
-            if ind.fitness is not None and ind.fitness < 100000:
-                best_fitness = min(best_fitness, ind.fitness)
+            if ind.ntk_score is not None and ind.ntk_score < 100000:
+                best_fitness = min(best_fitness, ind.ntk_score)
             
             self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 100000)
             eval_count += 1
@@ -187,13 +187,13 @@ class AgingEvolutionSearch:
             self.population.append(child)
             self.history.append(child)
             
-            # 记录当前个体的NTK值
-            current_fitness = child.fitness if child.fitness is not None else 100000
-            self.all_fitness_values.append(current_fitness)
+            # 记录当前个体的 NTK 值（使用原始 ntk_score）
+            current_ntk = child.ntk_score if child.ntk_score is not None else 100000
+            self.all_fitness_values.append(current_ntk)
             
-            # 更新最佳fitness
-            if child.fitness is not None and child.fitness < 100000:
-                best_fitness = min(best_fitness, child.fitness)
+            # 更新最佳 NTK
+            if child.ntk_score is not None and child.ntk_score < 100000:
+                best_fitness = min(best_fitness, child.ntk_score)
             
             self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 100000)
             eval_count += 1
@@ -421,27 +421,27 @@ def compute_statistics(evolution_history: List[Individual], random_history: List
     """
     计算统计指标
     """
-    # 提取有效的fitness值
-    evo_fitnesses = [ind.fitness for ind in evolution_history 
-                     if ind.fitness is not None and ind.fitness < 100000]
-    rand_fitnesses = [ind.fitness for ind in random_history 
-                      if ind.fitness is not None and ind.fitness < 100000]
+    # 提取有效的 NTK 值（使用原始 ntk_score）
+    evo_ntk_scores = [ind.ntk_score for ind in evolution_history 
+                      if ind.ntk_score is not None and ind.ntk_score < 100000]
+    rand_ntk_scores = [ind.ntk_score for ind in random_history 
+                       if ind.ntk_score is not None and ind.ntk_score < 100000]
     
     stats = {
         'evolution': {
             'total_evaluations': len(evolution_history),
-            'valid_evaluations': len(evo_fitnesses),
-            'best_ntk': float(min(evo_fitnesses)) if evo_fitnesses else None,
-            'mean_ntk': float(np.mean(evo_fitnesses)) if evo_fitnesses else None,
-            'std_ntk': float(np.std(evo_fitnesses)) if evo_fitnesses else None,
+            'valid_evaluations': len(evo_ntk_scores),
+            'best_ntk': float(min(evo_ntk_scores)) if evo_ntk_scores else None,
+            'mean_ntk': float(np.mean(evo_ntk_scores)) if evo_ntk_scores else None,
+            'std_ntk': float(np.std(evo_ntk_scores)) if evo_ntk_scores else None,
             'final_best': float(evolution_curve[-1]) if evolution_curve else None,
         },
         'random': {
             'total_evaluations': len(random_history),
-            'valid_evaluations': len(rand_fitnesses),
-            'best_ntk': float(min(rand_fitnesses)) if rand_fitnesses else None,
-            'mean_ntk': float(np.mean(rand_fitnesses)) if rand_fitnesses else None,
-            'std_ntk': float(np.std(rand_fitnesses)) if rand_fitnesses else None,
+            'valid_evaluations': len(rand_ntk_scores),
+            'best_ntk': float(min(rand_ntk_scores)) if rand_ntk_scores else None,
+            'mean_ntk': float(np.mean(rand_ntk_scores)) if rand_ntk_scores else None,
+            'std_ntk': float(np.std(rand_ntk_scores)) if rand_ntk_scores else None,
             'final_best': float(random_curve[-1]) if random_curve else None,
         },
         'comparison': {}

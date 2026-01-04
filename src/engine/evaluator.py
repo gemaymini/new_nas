@@ -160,6 +160,49 @@ class NTKEvaluator:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
             return 100000.0
+    def normalize(self, value: float, min_val: float, max_val: float) -> float:
+        """
+        归一化到 [0, 1] 范围
+        """
+        if max_val <= min_val:
+            return 0.0
+        normalized = (value - min_val) / (max_val - min_val)
+        return max(0.0, min(1.0, normalized))  # 裁剪到 [0, 1]
+    
+    def compute_weighted_fitness(self, ntk_score: float, param_count: int) -> float:
+        """
+        计算加权多目标适应度
+        先归一化再加权，比例为 NTK:参数量 = 8:2
+        
+        Args:
+            ntk_score: NTK 条件数（越小越好）
+            param_count: 模型参数量（越小越好）
+        
+        Returns:
+            加权适应度值（越小越好）
+        """
+        # 归一化 NTK 条件数
+        norm_ntk = self.normalize(
+            ntk_score, 
+            config.NTK_NORMALIZE_MIN, 
+            config.NTK_NORMALIZE_MAX
+        )
+        
+        # 归一化参数量
+        norm_param = self.normalize(
+            param_count, 
+            config.PARAM_NORMALIZE_MIN, 
+            config.PARAM_NORMALIZE_MAX
+        )
+        
+        # 加权求和
+        weighted_fitness = (
+            config.MULTI_OBJ_WEIGHT_NTK * norm_ntk + 
+            config.MULTI_OBJ_WEIGHT_PARAM * norm_param
+        )
+        
+        return round(weighted_fitness, 6)
+
     def evaluate_individual(self, individual: Individual) -> float:
         try:
             network = NetworkBuilder.build_from_individual(
@@ -170,23 +213,26 @@ class NTKEvaluator:
             param_count = network.get_param_count()
             individual.param_count = param_count
 
-            score = self.compute_ntk_score(network, param_count)
+            ntk_score = self.compute_ntk_score(network, param_count)
+            individual.ntk_score = ntk_score  # 保存原始 NTK 值
 
-            # fitness 直接等于 NTK 条件数（越小越好）
-            fitness = score
+            # 计算加权多目标适应度（归一化后加权）
+            fitness = self.compute_weighted_fitness(ntk_score, param_count)
             individual.fitness = fitness
 
             del network
             clear_gpu_memory()
 
-            logger.log_evaluation(individual.id, "NTK", fitness, param_count)
+            logger.log_evaluation(individual.id, "MultiObj", fitness, param_count, 
+                                  extra_info=f"NTK={ntk_score:.2f}")
             return fitness
 
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
-            individual.fitness = 100000.0  # 极大值表示最差
+            individual.fitness = 1.0  # 归一化后的最大值
+            individual.ntk_score = 100000.0
             clear_gpu_memory()
-            return 100000.0
+            return 1.0
 
 
 class FinalEvaluator:
@@ -316,6 +362,8 @@ class FinalEvaluator:
             'encoding': individual.encoding,
             'accuracy': best_acc,
             'param_count': param_count,
+            'fitness': individual.fitness,
+            'ntk_score': individual.ntk_score,
             'history': history
         }
         torch.save(save_dict, save_path)
@@ -341,6 +389,8 @@ class FinalEvaluator:
             'individual_id': individual.id,
             'param_count': param_count,
             'best_accuracy': best_acc,
+            'fitness': individual.fitness,
+            'ntk_score': individual.ntk_score,
             'train_time': train_time,
             'history': history,
             'encoding': individual.encoding,
@@ -376,8 +426,11 @@ class FinalEvaluator:
 
 
 class FitnessEvaluator:
+    """
+    适应度评估器
+    延迟加载 NTKEvaluator，避免模块导入时加载数据集
+    """
     def __init__(self):
-        # 延迟初始化，避免模块导入时就加载数据集
         self._ntk_evaluator = None
 
     @property
@@ -394,23 +447,6 @@ class FitnessEvaluator:
     def evaluate_individual(self, individual: Individual) -> float:
         """评估单个个体的 NTK Fitness"""
         return self.ntk_evaluator.evaluate_individual(individual)
-
-    def evaluate_population_ntk(self, population: List[Individual], show_progress: bool = True):
-        total = len(population)
-        clear_gpu_memory()
-
-        for idx, ind in enumerate(population):
-            if show_progress:
-                print(f"\r[NTK Eval] {idx+1}/{total}", end="", flush=True)
-            self.ntk_evaluator.evaluate_individual(ind)
-            # param_count is calculated inside ntk_evaluator.evaluate_individual
-
-            if (idx + 1) % 5 == 0:
-                clear_gpu_memory()
-
-        if show_progress:
-            print()
-        clear_gpu_memory()
 
 
 # 全局实例
