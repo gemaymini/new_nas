@@ -802,7 +802,7 @@ def main():
                         help='传统EA搜索阶段训练轮数（适应度评估）')
     
     # 随机搜索参数
-    parser.add_argument('--rs_samples', type=int, default=10,
+    parser.add_argument('--rs_samples', type=int, default=16,
                         help='随机搜索的采样数量')
     
     # 共享参数
