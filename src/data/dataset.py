@@ -33,7 +33,9 @@ class DatasetLoader:
                                (0.2023, 0.1994, 0.2010)),
         ])
         
-        root = './data'
+        # 使用脚本所在目录的绝对路径，避免依赖当前工作目录
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cifar-10-batches-py')
+        root = os.path.dirname(root)  # 指向 src/data 目录
         download = True
         if os.path.exists(os.path.join(root, 'cifar-10-batches-py')):
             download = False
