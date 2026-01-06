@@ -6,8 +6,8 @@
 import random
 import os
 
-# 项目根目录 (src 的父目录)
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class Config:
     """
@@ -147,3 +147,6 @@ class Config:
 
 # 全局配置实例
 config = Config()
+
+if __name__ == "__main__":
+    print(_PROJECT_ROOT)
