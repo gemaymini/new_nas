@@ -111,7 +111,8 @@ class DatasetLoader:
         获取用于NTK计算的DataLoader
         通常使用较小的batch_size，且不进行数据增强
         """
-        root = './data'
+        # 使用脚本所在目录作为数据根目录
+        root = os.path.dirname(os.path.abspath(__file__))
         
         if dataset_name == 'cifar10':
             transform = transforms.Compose([
@@ -180,7 +181,8 @@ class DatasetLoader:
                                (0.2675, 0.2565, 0.2761)),
         ])
         
-        root = './data'
+        # 使用脚本所在目录作为数据根目录
+        root = os.path.dirname(os.path.abspath(__file__))
         download = True
         if os.path.exists(os.path.join(root, 'cifar-100-python')):
             download = False

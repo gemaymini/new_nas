@@ -65,7 +65,7 @@ class AgingEvolutionNAS:
             
             # 记录评估结果
             step = 0  # 初始化阶段step=0
-            self.ntk_history.append((step, ind.id, ind.ntk_score, ind.fitness, ind.param_count, ind.encoding.copy()))
+            self.ntk_history.append((step, ind.id, getattr(ind, 'ntk_score', None), ind.fitness, ind.param_count, ind.encoding.copy()))
             
             if len(self.population) % 10 == 0:
                 logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
@@ -149,7 +149,7 @@ class AgingEvolutionNAS:
         current_step = len(self.history) - len(self.population) + 1
         
         # 记录评估结果
-        self.ntk_history.append((current_step, child.id, child.ntk_score, child.fitness, child.param_count, child.encoding.copy()))
+        self.ntk_history.append((current_step, child.id, getattr(child, 'ntk_score', None), child.fitness, child.param_count, child.encoding.copy()))
         
         # 4. Atomic Update
         with self.lock:
