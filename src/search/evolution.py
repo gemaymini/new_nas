@@ -31,6 +31,11 @@ class AgingEvolutionNAS:
         self.history: List[Individual] = []
         self.lock = threading.Lock()
         
+        # 去重机制：编码哈希 -> Individual 映射
+        # 用于快速查找已评估的编码，避免重复评估
+        self.encoding_cache: dict = {}  # encoding_key -> Individual
+        self.duplicate_count = 0  # 记录跳过的重复个体数量
+        
         # 搜索历史记录，用于分析和绘制曲线
         # 格式: [(step, individual_id, ntk_value, fitness, param_count, encoding), ...]
         self.ntk_history: List[Tuple[int, int, float, float, int, list]] = []
@@ -44,6 +49,22 @@ class AgingEvolutionNAS:
         self.time_stats: dict = {}  # 详细时间统计
         
         self._log_search_space_info()
+    
+    @staticmethod
+    def _encoding_to_key(encoding: List[int]) -> tuple:
+        """将编码转换为可哈希的key用于去重"""
+        return tuple(encoding)
+    
+    def _register_individual(self, ind: Individual):
+        """注册个体到缓存中"""
+        key = self._encoding_to_key(ind.encoding)
+        if key not in self.encoding_cache:
+            self.encoding_cache[key] = ind
+    
+    def _find_duplicate(self, encoding: List[int]) -> Optional[Individual]:
+        """查找是否存在相同编码的已评估个体"""
+        key = self._encoding_to_key(encoding)
+        return self.encoding_cache.get(key, None)
 
     def _log_search_space_info(self):
         logger.info(config.get_search_space_summary())
@@ -52,14 +73,27 @@ class AgingEvolutionNAS:
     def initialize_population(self):
         """
         Initialize the population with random individuals until queue is full.
+        去重：确保初始种群中没有重复编码
         """
         logger.info("Initializing population...")
         
         while len(self.population) < self.population_size:
             ind = population_initializer.create_valid_individual()
-            # Evaluate immediately
-            ind.id=len(self.population)
-            fitness_evaluator.evaluate_individual(ind)
+            
+            # 检查是否已存在相同编码
+            existing = self._find_duplicate(ind.encoding)
+            if existing is not None:
+                # 复用已有评估结果
+                ind.fitness = existing.fitness
+                ind.ntk_score = existing.ntk_score
+                ind.param_count = existing.param_count
+                self.duplicate_count += 1
+            else:
+                # 新编码，需要评估
+                ind.id = len(self.history)
+                fitness_evaluator.evaluate_individual(ind)
+                self._register_individual(ind)
+            
             self.population.append(ind)
             self.history.append(ind)
             
@@ -68,9 +102,9 @@ class AgingEvolutionNAS:
             self.ntk_history.append((step, ind.id, getattr(ind, 'ntk_score', None), ind.fitness, ind.param_count, ind.encoding.copy()))
             
             if len(self.population) % 10 == 0:
-                logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
+                logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals (duplicates skipped: {self.duplicate_count})")
 
-        logger.info(f"Population initialized. Size: {len(self.population)}")
+        logger.info(f"Population initialized. Size: {len(self.population)}, Unique: {len(self.encoding_cache)}")
         self._record_statistics()
         
         # 保存NTK曲线
@@ -130,20 +164,42 @@ class AgingEvolutionNAS:
         """
         Perform one step of Aging Evolution:
         1. Select parents
-        2. Generate child
-        3. Evaluate child
+        2. Generate child (with deduplication)
+        3. Evaluate child (skip if duplicate)
         4. Atomic update: Push child, Pop oldest
         """
         
         # 1. Select Parents
         parent1, parent2 = self._select_parents()
         
-        # 2. Generate Offspring
-        child = self._generate_offspring(parent1, parent2)
+        # 2. Generate Offspring (尝试生成不重复的子代)
+        max_attempts = 10  # 最多尝试次数
+        child = None
+        is_duplicate = False
+        
+        for attempt in range(max_attempts):
+            candidate = self._generate_offspring(parent1, parent2)
+            existing = self._find_duplicate(candidate.encoding)
+            
+            if existing is None:
+                # 新编码，使用它
+                child = candidate
+                break
+            elif attempt == max_attempts - 1:
+                # 最后一次尝试仍然重复，接受重复但复用结果
+                child = candidate
+                child.fitness = existing.fitness
+                child.ntk_score = existing.ntk_score
+                child.param_count = existing.param_count
+                is_duplicate = True
+                self.duplicate_count += 1
+        
         child.id = len(self.history)  # Assign new ID based on total history
         
-        # 3. Evaluate (Calculate NTK)
-        fitness_evaluator.evaluate_individual(child)
+        # 3. Evaluate (Calculate NTK) - 仅对新编码评估
+        if not is_duplicate:
+            fitness_evaluator.evaluate_individual(child)
+            self._register_individual(child)
         
         # 当前step（进化代数）
         current_step = len(self.history) - len(self.population) + 1
@@ -192,6 +248,7 @@ class AgingEvolutionNAS:
         # 记录搜索阶段时间
         self.search_time = time.time() - search_start_time
         logger.info(f"Search completed. Search time: {self._format_time(self.search_time)}")
+        logger.info(f"Deduplication stats: Total={len(self.history)}, Unique={len(self.encoding_cache)}, Duplicates skipped={self.duplicate_count}")
         self.save_checkpoint()
         
         # 搜索结束后保存历史并绘制可视化图
@@ -329,10 +386,12 @@ class AgingEvolutionNAS:
             'search_time': self.search_time,  # 搜索时间
             'short_train_time': self.short_train_time,  # 短轮次训练时间
             'full_train_time': self.full_train_time,  # 完整训练时间
+            'encoding_cache_keys': list(self.encoding_cache.keys()),  # 保存已评估的编码keys
+            'duplicate_count': self.duplicate_count,  # 保存重复计数
         }
         with open(filepath, 'wb') as f:
             pickle.dump(checkpoint, f)
-        logger.info(f"Checkpoint saved to {filepath}")
+        logger.info(f"Checkpoint saved to {filepath} (unique encodings: {len(self.encoding_cache)}, duplicates: {self.duplicate_count})")
 
     def load_checkpoint(self, filepath: str):
         with open(filepath, 'rb') as f:
@@ -345,7 +404,16 @@ class AgingEvolutionNAS:
         self.search_time = checkpoint.get('search_time', 0.0)
         self.short_train_time = checkpoint.get('short_train_time', 0.0)
         self.full_train_time = checkpoint.get('full_train_time', 0.0)
-        logger.info(f"Checkpoint loaded from {filepath}")
+        # 加载重复计数（兼容旧checkpoint）
+        self.duplicate_count = checkpoint.get('duplicate_count', 0)
+        
+        # 重建编码缓存：从history中重建
+        self.encoding_cache = {}
+        for ind in self.history:
+            if ind.encoding and ind.fitness is not None:
+                self._register_individual(ind)
+        
+        logger.info(f"Checkpoint loaded from {filepath} (unique encodings: {len(self.encoding_cache)}, duplicates: {self.duplicate_count})")
     
     def _save_ntk_history(self, filepath: str = None):
         """

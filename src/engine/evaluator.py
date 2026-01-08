@@ -47,6 +47,17 @@ class NTKEvaluator:
             batch_size=self.batch_size,
             dataset_name=self.dataset
         )
+        
+        # ==================== 熵权法相关 ====================
+        # 历史数据用于动态计算熵权重
+        self.history_ntk: List[float] = []      # 历史 NTK 值
+        self.history_param: List[float] = []    # 历史参数量
+        self.entropy_weights = None              # 熵权法计算的权重 (w_ntk, w_param)
+        self.dynamic_normalize_range = None      # 动态归一化范围
+        
+        # 熵权法更新频率：每 N 个样本重新计算一次权重
+        self.entropy_update_interval = config.ENTROPY_UPDATE_INTERVAL
+        self.min_samples_for_entropy = config.MIN_SAMPLES_FOR_ENTROPY  # 最少样本数才启用熵权法
 
     def recal_bn(self, network: nn.Module, xloader, recal_batches: int, device):
         """重置 BN 统计并用若干 batch 重新统计（与 ntk.py 中一致）"""
@@ -160,6 +171,98 @@ class NTKEvaluator:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
             return 100000.0
+    
+    def _update_history(self, ntk_score: float, param_count: int):
+        """更新历史数据"""
+        self.history_ntk.append(ntk_score)
+        self.history_param.append(float(param_count))
+        
+        # 定期更新熵权重
+        n = len(self.history_ntk)
+        if n >= self.min_samples_for_entropy and n % self.entropy_update_interval == 0:
+            self._compute_entropy_weights()
+    
+    def _compute_entropy_weights(self):
+        """
+        熵权法计算权重
+        
+        原理：
+        1. 对每个目标进行归一化
+        2. 计算每个目标的信息熵 H_j
+        3. 熵越小表示该目标区分度越高，应赋予更大权重
+        4. 权重 w_j = (1 - H_j) / sum(1 - H_k)
+        """
+        n = len(self.history_ntk)
+        # 至少需要 2 个样本才能计算熵
+        min_required = max(2, self.min_samples_for_entropy)
+        if n < min_required:
+            return
+        
+        # 1. 获取动态归一化范围（从历史数据中）
+        ntk_min, ntk_max = min(self.history_ntk), max(self.history_ntk)
+        param_min, param_max = min(self.history_param), max(self.history_param)
+        
+        # 防止除零
+        if ntk_max <= ntk_min:
+            ntk_max = ntk_min + 1.0
+        if param_max <= param_min:
+            param_max = param_min + 1.0
+        
+        self.dynamic_normalize_range = {
+            'ntk': (ntk_min, ntk_max),
+            'param': (param_min, param_max)
+        }
+        
+        # 2. 归一化所有历史数据到 [0, 1]
+        norm_ntk_list = [(v - ntk_min) / (ntk_max - ntk_min) for v in self.history_ntk]
+        norm_param_list = [(v - param_min) / (param_max - param_min) for v in self.history_param]
+        
+        # 3. 计算每个目标的熵
+        def compute_entropy(values: List[float]) -> float:
+            """计算信息熵 H = -sum(p * ln(p))"""
+            # 避免零值
+            eps = 1e-10
+            values = [max(v, eps) for v in values]
+            total = sum(values)
+            if total <= 0:
+                return 0.0
+            
+            # 归一化为概率分布
+            probs = [v / total for v in values]
+            
+            # 计算熵（归一化到 [0, 1]）
+            entropy = 0.0
+            for p in probs:
+                if p > eps:
+                    entropy -= p * np.log(p)
+            
+            # 归一化熵：除以 ln(n) 使其范围为 [0, 1]
+            max_entropy = np.log(len(values)) if len(values) > 1 else 1.0
+            normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0.0
+            
+            return normalized_entropy
+        
+        H_ntk = compute_entropy(norm_ntk_list)
+        H_param = compute_entropy(norm_param_list)
+        
+        # 4. 计算权重：w_j = (1 - H_j) / sum(1 - H_k)
+        # 熵越小，区分度越高，权重越大
+        d_ntk = 1.0 - H_ntk    # 差异系数
+        d_param = 1.0 - H_param
+        
+        total_d = d_ntk + d_param
+        if total_d <= 0:
+            # 退化为等权重
+            w_ntk, w_param = 0.5, 0.5
+        else:
+            w_ntk = d_ntk / total_d
+            w_param = d_param / total_d
+        
+        self.entropy_weights = (w_ntk, w_param)
+        
+        logger.info(f"[EntropyWeight] Updated weights: NTK={w_ntk:.4f}, Param={w_param:.4f} "
+                   f"(H_ntk={H_ntk:.4f}, H_param={H_param:.4f}, samples={n})")
+    
     def normalize(self, value: float, min_val: float, max_val: float) -> float:
         """
         归一化到 [0, 1] 范围
@@ -171,8 +274,11 @@ class NTKEvaluator:
     
     def compute_weighted_fitness(self, ntk_score: float, param_count: int) -> float:
         """
-        计算加权多目标适应度
-        先归一化再加权，比例为 NTK:参数量 = 8:2
+        计算加权多目标适应度（熵权法）
+        
+        1. 样本数不足时使用配置的固定权重
+        2. 样本数足够后使用熵权法动态计算的权重
+        3. 使用历史数据的动态范围进行归一化
         
         Args:
             ntk_score: NTK 条件数（越小越好）
@@ -181,25 +287,37 @@ class NTKEvaluator:
         Returns:
             加权适应度值（越小越好）
         """
-        # 归一化 NTK 条件数
-        norm_ntk = self.normalize(
-            ntk_score, 
-            config.NTK_NORMALIZE_MIN, 
-            config.NTK_NORMALIZE_MAX
-        )
+        # 更新历史数据
+        self._update_history(ntk_score, param_count)
         
-        # 归一化参数量
-        norm_param = self.normalize(
-            param_count, 
-            config.PARAM_NORMALIZE_MIN, 
-            config.PARAM_NORMALIZE_MAX
-        )
+        # 确定归一化范围
+        if self.dynamic_normalize_range is not None:
+            ntk_min, ntk_max = self.dynamic_normalize_range['ntk']
+            param_min, param_max = self.dynamic_normalize_range['param']
+        else:
+            # 使用配置的静态范围
+            ntk_min, ntk_max = config.NTK_NORMALIZE_MIN, config.NTK_NORMALIZE_MAX
+            param_min, param_max = config.PARAM_NORMALIZE_MIN, config.PARAM_NORMALIZE_MAX
+        
+        # 归一化
+        norm_ntk = self.normalize(ntk_score, ntk_min, ntk_max)
+        norm_param = self.normalize(param_count, param_min, param_max)
+        
+        # 确定权重
+        if self.entropy_weights is not None:
+            w_ntk, w_param = self.entropy_weights
+        else:
+            # 使用配置的固定权重
+            w_ntk = config.MULTI_OBJ_WEIGHT_NTK
+            w_param = config.MULTI_OBJ_WEIGHT_PARAM
+            # 归一化权重
+            total_w = w_ntk + w_param
+            if total_w > 0:
+                w_ntk /= total_w
+                w_param /= total_w
         
         # 加权求和
-        weighted_fitness = (
-            config.MULTI_OBJ_WEIGHT_NTK * norm_ntk + 
-            config.MULTI_OBJ_WEIGHT_PARAM * norm_param
-        )
+        weighted_fitness = w_ntk * norm_ntk + w_param * norm_param
         
         return round(weighted_fitness, 6)
 
