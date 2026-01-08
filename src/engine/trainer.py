@@ -80,12 +80,11 @@ class NetworkTrainer:
 
     def train_network(self, model: nn.Module, trainloader: DataLoader,
                      testloader: DataLoader, epochs: int = None,
-                     lr: float = None, momentum: float = None,
+                     lr: float = None,
                      weight_decay: float = None,
                      early_stopping: bool = None) -> Tuple[float, List[dict]]:
         if epochs is None: epochs = config.FULL_TRAIN_EPOCHS
         if lr is None: lr = config.LEARNING_RATE
-        if momentum is None: momentum = config.MOMENTUM
         if weight_decay is None: weight_decay = config.WEIGHT_DECAY
         if early_stopping is None: early_stopping = config.EARLY_STOPPING_ENABLED
         
@@ -100,8 +99,7 @@ class NetworkTrainer:
 
         model = model.to(self.device)
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(model.parameters(), lr=lr, 
-                             momentum=momentum, weight_decay=weight_decay)
+        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
         
         history = []

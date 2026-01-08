@@ -76,7 +76,6 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
     print(f"Dataset: {config.FINAL_DATASET}")
     print(f"Using hyperparameters from config (unless overridden):")
     print(f"  LR: {lr if lr is not None else config.LEARNING_RATE}")
-    print(f"  Momentum: {config.MOMENTUM}")
     print(f"  Weight Decay: {config.WEIGHT_DECAY}")
     
     # 4. Train

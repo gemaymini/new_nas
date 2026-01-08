@@ -63,12 +63,10 @@ def main():
     # Update config based on dataset
     if args.dataset == 'imagenet':
         config.IMAGENET_ROOT = args.imagenet_root
-        config.NTK_NUM_CLASSES = config.IMAGENET_NUM_CLASSES
+        config.NTK_NUM_CLASSES = 1000
         config.NTK_INPUT_SIZE = (3, config.IMAGENET_INPUT_SIZE, config.IMAGENET_INPUT_SIZE)
         config.BATCH_SIZE = config.IMAGENET_BATCH_SIZE
         config.INPUT_IMAGE_SIZE = config.IMAGENET_INPUT_SIZE
-        config.SHORT_TRAIN_EPOCHS = config.IMAGENET_SHORT_EPOCHS
-        config.FULL_TRAIN_EPOCHS = config.IMAGENET_EPOCHS
         # ImageNet 使用更大的初始卷积 stride
         config.INIT_CONV_KERNEL_SIZE = 7
         config.INIT_CONV_STRIDE = 2

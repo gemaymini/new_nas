@@ -27,6 +27,12 @@ class Config:
     HISTORY_TOP_N2 =  1             # 第二轮筛选：基于验证集Acc选择Top N2
     FULL_TRAIN_EPOCHS = 50         # 最终训练：完整训练轮数
     
+    # ==================== ImageNet 专用参数 ====================
+    IMAGENET_ROOT = os.path.join(_PROJECT_ROOT, 'data', 'imagenet')  # ImageNet 数据集根目录
+    IMAGENET_BATCH_SIZE = 64          # ImageNet 批次大小（显存考虑）
+    IMAGENET_INPUT_SIZE = 224          # ImageNet 输入尺寸
+    # IMAGENET_NUM_CLASSES = 1000        # ImageNet 类别数
+    
     # ==================== 交叉算子参数 ====================
     PROB_CROSSOVER = 0.5            # 交叉概率 (0.8)
     PROB_MUTATION = 0.5            # 变异概率 (0.1)
@@ -92,28 +98,18 @@ class Config:
     
     # ==================== 熵权法配置 ====================
     ENTROPY_UPDATE_INTERVAL = 10     # 每 N 个样本重新计算一次熵权重
-    MIN_SAMPLES_FOR_ENTROPY = 2      # 最少需要多少样本才启用熵权法（0 表示立即启用）
+    MIN_SAMPLES_FOR_ENTROPY = 10      # 最少需要多少样本才启用熵权法（0 表示立即启用）
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
     BATCH_SIZE = 256             
-    LEARNING_RATE = 0.1             
-    MOMENTUM = 0.9                  
-    WEIGHT_DECAY = 5e-4
+    LEARNING_RATE = 0.001           # AdamW 推荐学习率
+    WEIGHT_DECAY = 0.01             # AdamW 推荐权重衰减
     
     # ==================== 早停参数 ====================
     EARLY_STOPPING_ENABLED = True   # 是否启用早停
-    EARLY_STOPPING_PATIENCE = 30    # 早停耐心值（连续多少轮无提升则停止）
+    EARLY_STOPPING_PATIENCE = 50    # 早停耐心值（连续多少轮无提升则停止）
     EARLY_STOPPING_MIN_DELTA = 0.01 # 最小提升阈值（%），低于此值不算提升             
-    
-    # ==================== ImageNet 专用参数 ====================
-    IMAGENET_ROOT = os.path.join(_PROJECT_ROOT, 'data', 'imagenet')  # ImageNet 数据集根目录
-    IMAGENET_BATCH_SIZE = 64          # ImageNet 批次大小（显存考虑）
-    IMAGENET_INPUT_SIZE = 224          # ImageNet 输入尺寸
-    IMAGENET_NUM_CLASSES = 1000        # ImageNet 类别数
-    IMAGENET_LR = 0.1                  # ImageNet 初始学习率
-    IMAGENET_EPOCHS = 300               # ImageNet 完整训练轮数
-    IMAGENET_SHORT_EPOCHS = 30          # ImageNet 短期训练轮数
     
     # ==================== 最终评估参数 ====================
     FINAL_DATASET = 'cifar10'       
