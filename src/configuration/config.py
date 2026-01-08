@@ -16,16 +16,16 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE =10         # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 100                 # 最大进化代数 (Total number of individuals to evaluate in search)
+    MAX_GEN = 50                 # 最大进化代数 (Total number of individuals to evaluate in search)
     TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
     # ==================== 筛选与训练流程参数 ====================
-    HISTORY_TOP_N1 = 5             # 第一轮筛选：基于NTK选择Top N1
+    HISTORY_TOP_N1 = 2             # 第一轮筛选：基于NTK选择Top N1
     SHORT_TRAIN_EPOCHS = 10         # 第一轮筛选：短期训练轮数
     
     HISTORY_TOP_N2 =  1             # 第二轮筛选：基于验证集Acc选择Top N2
-    FULL_TRAIN_EPOCHS = 50         # 最终训练：完整训练轮数
+    FULL_TRAIN_EPOCHS = 15          # 最终训练：完整训练轮数
     
     # ==================== ImageNet 专用参数 ====================
     IMAGENET_ROOT = os.path.join(_PROJECT_ROOT, 'data', 'imagenet')  # ImageNet 数据集根目录
@@ -98,7 +98,7 @@ class Config:
     
     # ==================== 熵权法配置 ====================
     ENTROPY_UPDATE_INTERVAL = 10     # 每 N 个样本重新计算一次熵权重
-    MIN_SAMPLES_FOR_ENTROPY = 10      # 最少需要多少样本才启用熵权法（0 表示立即启用）
+    MIN_SAMPLES_FOR_ENTROPY = 0      # 最少需要多少样本才启用熵权法（0 表示立即启用）
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
