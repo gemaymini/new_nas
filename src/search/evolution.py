@@ -31,6 +31,10 @@ class AgingEvolutionNAS:
         self.history: List[Individual] = []
         self.lock = threading.Lock()
         
+        # 模型去重：记录已见过的编码
+        self.seen_encodings: set = set()
+        self.duplicate_count = 0  # 重复模型计数
+        
         # NTK历史记录，用于绘制NTK曲线
         # 格式: [(step, individual_id, ntk_value, encoding), ...]
         self.ntk_history: List[Tuple[int, int, float, list]] = []
@@ -49,16 +53,47 @@ class AgingEvolutionNAS:
         logger.info(config.get_search_space_summary())
         logger.info(f"Aging Evolution Config: Pop Size={self.population_size}, Total Gen={self.max_gen}")
 
+    def _is_duplicate(self, encoding: List[int]) -> bool:
+        """
+        检查编码是否已存在（重复模型）
+        """
+        enc_tuple = tuple(encoding)
+        if enc_tuple in self.seen_encodings:
+            return True
+        return False
+    
+    def _register_encoding(self, encoding: List[int]):
+        """
+        注册新的编码到已见集合
+        """
+        enc_tuple = tuple(encoding)
+        self.seen_encodings.add(enc_tuple)
+
     def initialize_population(self):
         """
         Initialize the population with random individuals until queue is full.
+        Duplicate individuals are skipped.
         """
         logger.info("Initializing population...")
+        max_attempts_per_individual = 100  # 每个位置最多尝试次数，防止无限循环
         
         while len(self.population) < self.population_size:
-            ind = population_initializer.create_valid_individual()
-            # Evaluate immediately
-            ind.id=len(self.population)
+            # 尝试生成不重复的个体
+            attempts = 0
+            ind = None
+            while attempts < max_attempts_per_individual:
+                ind = population_initializer.create_valid_individual()
+                if not self._is_duplicate(ind.encoding):
+                    break
+                self.duplicate_count += 1
+                attempts += 1
+                
+            if attempts >= max_attempts_per_individual:
+                logger.warning(f"Max attempts reached, using last generated individual")
+            
+            # 注册编码并评估
+            self._register_encoding(ind.encoding)
+            ind.id = len(self.population)
             fitness_evaluator.evaluate_individual(ind)
             self.population.append(ind)
             self.history.append(ind)
@@ -68,9 +103,9 @@ class AgingEvolutionNAS:
             self.ntk_history.append((step, ind.id, ind.fitness, ind.encoding.copy()))
             
             if len(self.population) % 10 == 0:
-                logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
+                logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals (duplicates skipped: {self.duplicate_count})")
 
-        logger.info(f"Population initialized. Size: {len(self.population)}")
+        logger.info(f"Population initialized. Size: {len(self.population)}, Duplicates skipped: {self.duplicate_count}")
         self._record_statistics()
         
         # 保存NTK曲线
@@ -126,23 +161,44 @@ class AgingEvolutionNAS:
             if Encoder.validate_encoding(ind.encoding): return ind
         return random.choice(parents).copy()
 
-    def step(self):
+    def step(self) -> bool:
         """
         Perform one step of Aging Evolution:
         1. Select parents
-        2. Generate child
+        2. Generate child (skip if duplicate)
         3. Evaluate child
         4. Atomic update: Push child, Pop oldest
+        
+        Returns:
+            bool: True if a valid (non-duplicate) child was generated, False otherwise
         """
+        max_attempts = 50  # 最大尝试次数，防止无限循环
+        attempts = 0
         
-        # 1. Select Parents
-        parent1, parent2 = self._select_parents()
+        while attempts < max_attempts:
+            # 1. Select Parents
+            parent1, parent2 = self._select_parents()
+            
+            # 2. Generate Offspring
+            child = self._generate_offspring(parent1, parent2)
+            
+            # 3. Check for duplicates
+            if self._is_duplicate(child.encoding):
+                self.duplicate_count += 1
+                attempts += 1
+                continue  # 重复模型，重新生成
+            
+            # 找到非重复模型，跳出循环
+            break
         
-        # 2. Generate Offspring
-        child = self._generate_offspring(parent1, parent2)
+        if attempts >= max_attempts:
+            logger.warning(f"Max attempts ({max_attempts}) reached in step, using last generated child")
+        
+        # 注册编码
+        self._register_encoding(child.encoding)
         child.id = len(self.history)  # Assign new ID based on total history
         
-        # 3. Evaluate (Calculate NTK)
+        # 4. Evaluate (Calculate NTK)
         fitness_evaluator.evaluate_individual(child)
         
         # 当前step（进化代数）
@@ -151,7 +207,7 @@ class AgingEvolutionNAS:
         # 记录NTK值
         self.ntk_history.append((current_step, child.id, child.fitness, child.encoding.copy()))
         
-        # 4. Atomic Update
+        # 5. Atomic Update
         with self.lock:
             # Remove oldest (head of deque)
             removed_ind = self.population.popleft()
@@ -164,10 +220,12 @@ class AgingEvolutionNAS:
             
         # Logging
         if len(self.history) % 10 == 0:
-            logger.info(f"Step {len(self.history)-len(self.population)}/{self.max_gen}: Child Fitness={child.fitness:.4f}")
+            logger.info(f"Step {len(self.history)-len(self.population)}/{self.max_gen}: Child Fitness={child.fitness:.4f} (duplicates skipped: {self.duplicate_count})")
             self._record_statistics()
             # 每10步保存一次NTK历史
             self._save_ntk_history()
+        
+        return True
 
     def run_search(self):
         """
@@ -192,6 +250,7 @@ class AgingEvolutionNAS:
         # 记录搜索阶段时间
         self.search_time = time.time() - search_start_time
         logger.info(f"Search completed. Search time: {self._format_time(self.search_time)}")
+        logger.info(f"Search statistics: {len(self.history)} valid individuals evaluated, {self.duplicate_count} duplicates skipped, {len(self.seen_encodings)} unique architectures")
         self.save_checkpoint()
         
         # 搜索结束后绘制NTK曲线
@@ -324,6 +383,8 @@ class AgingEvolutionNAS:
             'population': list(self.population), # Convert deque to list for pickling
             'history': self.history,
             'ntk_history': self.ntk_history,  # 保存NTK历史
+            'seen_encodings': self.seen_encodings,  # 保存已见编码集合
+            'duplicate_count': self.duplicate_count,  # 保存重复计数
             'search_time': self.search_time,  # 搜索时间
             'short_train_time': self.short_train_time,  # 短轮次训练时间
             'full_train_time': self.full_train_time,  # 完整训练时间
@@ -339,11 +400,19 @@ class AgingEvolutionNAS:
         self.history = checkpoint['history']
         # 加载NTK历史（兼容旧checkpoint）
         self.ntk_history = checkpoint.get('ntk_history', [])
+        # 加载去重状态（兼容旧checkpoint）
+        self.seen_encodings = checkpoint.get('seen_encodings', set())
+        self.duplicate_count = checkpoint.get('duplicate_count', 0)
+        # 如果是旧的checkpoint没有seen_encodings，从history重建
+        if not self.seen_encodings and self.history:
+            for ind in self.history:
+                self._register_encoding(ind.encoding)
+            logger.info(f"Rebuilt seen_encodings from history: {len(self.seen_encodings)} unique encodings")
         # 加载时间统计（兼容旧checkpoint）
         self.search_time = checkpoint.get('search_time', 0.0)
         self.short_train_time = checkpoint.get('short_train_time', 0.0)
         self.full_train_time = checkpoint.get('full_train_time', 0.0)
-        logger.info(f"Checkpoint loaded from {filepath}")
+        logger.info(f"Checkpoint loaded from {filepath}, duplicates skipped so far: {self.duplicate_count}")
     
     def _save_ntk_history(self, filepath: str = None):
         """
