@@ -33,7 +33,7 @@ class DatasetLoader:
                                (0.2023, 0.1994, 0.2010)),
         ])
         
-        root = './data'
+        root = config.DATA_DIR
         download = True
         if os.path.exists(os.path.join(root, 'cifar-10-batches-py')):
             download = False
@@ -109,7 +109,7 @@ class DatasetLoader:
         获取用于NTK计算的DataLoader
         通常使用较小的batch_size，且不进行数据增强
         """
-        root = './data'
+        root = config.DATA_DIR
         
         if dataset_name == 'cifar10':
             transform = transforms.Compose([
@@ -178,7 +178,7 @@ class DatasetLoader:
                                (0.2675, 0.2565, 0.2761)),
         ])
         
-        root = './data'
+        root = config.DATA_DIR
         download = True
         if os.path.exists(os.path.join(root, 'cifar-100-python')):
             download = False

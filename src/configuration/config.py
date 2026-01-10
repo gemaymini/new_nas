@@ -3,12 +3,17 @@
 神经网络架构搜索算法 - 配置文件
 包含所有超参数配置
 """
+import os
 import random
 
 class Config:
+
     """
     配置类，包含所有超参数
     """
+    BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    DATA_DIR = os.path.join(BASE_DIR, "data")
+
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE =100         # 种群大小 (Aging Evolution Queue Size)
@@ -90,7 +95,7 @@ class Config:
     EARLY_STOPPING_MIN_DELTA = 0.01 # 最小提升阈值（%），低于此值不算提升             
     
     # ==================== ImageNet 专用参数 ====================
-    IMAGENET_ROOT = './data/imagenet'  # ImageNet 数据集根目录
+    IMAGENET_ROOT = os.path.join(DATA_DIR, 'imagenet')  # ImageNet 数据集根目录
     IMAGENET_BATCH_SIZE =512           # ImageNet 批次大小（显存考虑）
     IMAGENET_INPUT_SIZE = 224          # ImageNet 输入尺寸
     IMAGENET_NUM_CLASSES = 1000        # ImageNet 类别数
@@ -105,18 +110,18 @@ class Config:
     SENET_REDUCTION = 16            
     
     # ==================== 日志参数 ====================
-    LOG_DIR = './logs'              
+    LOG_DIR = os.path.join(BASE_DIR, 'logs')              
     LOG_LEVEL = 'INFO'              
     SAVE_CHECKPOINT = True          
-    CHECKPOINT_DIR = './checkpoints'  
+    CHECKPOINT_DIR = os.path.join(BASE_DIR, 'checkpoints')  
     
     # ==================== TensorBoard参数 ====================
     USE_TENSORBOARD = True          
-    TENSORBOARD_DIR = './runs'      
+    TENSORBOARD_DIR = os.path.join(BASE_DIR, 'runs')      
     
     # ==================== 调试参数 ====================
     SAVE_FAILED_INDIVIDUALS = True  
-    FAILED_INDIVIDUALS_DIR = './failed_individuals'  
+    FAILED_INDIVIDUALS_DIR = os.path.join(BASE_DIR, 'failed_individuals')  
     
     # ==================== 架构约束参数 ====================
     MIN_FEATURE_SIZE = 1            
