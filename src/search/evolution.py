@@ -83,12 +83,19 @@ class AgingEvolutionNAS:
             ind = None
             while attempts < max_attempts_per_individual:
                 ind = population_initializer.create_valid_individual()
+                if ind is None:
+                    # 无法生成有效个体，继续尝试
+                    attempts += 1
+                    continue
                 if not self._is_duplicate(ind.encoding):
                     break
                 self.duplicate_count += 1
                 attempts += 1
                 
-            if attempts >= max_attempts_per_individual:
+            if ind is None or attempts >= max_attempts_per_individual:
+                if ind is None:
+                    logger.error("Failed to create valid individual, retrying...")
+                    continue  # 重新开始外层循环
                 logger.warning(f"Max attempts reached, using last generated individual")
             
             # 注册编码并评估
@@ -174,6 +181,8 @@ class AgingEvolutionNAS:
         """
         max_attempts = 50  # 最大尝试次数，防止无限循环
         attempts = 0
+        child = None
+        is_duplicate = True
         
         while attempts < max_attempts:
             # 1. Select Parents
@@ -189,10 +198,13 @@ class AgingEvolutionNAS:
                 continue  # 重复模型，重新生成
             
             # 找到非重复模型，跳出循环
+            is_duplicate = False
             break
         
-        if attempts >= max_attempts:
-            logger.warning(f"Max attempts ({max_attempts}) reached in step, using last generated child")
+        if is_duplicate:
+            # 达到最大尝试次数且仍然是重复的，记录警告但不注册（不计入有效搜索）
+            logger.warning(f"Max attempts ({max_attempts}) reached in step, all generated children were duplicates. Skipping this step.")
+            return False  # 返回 False 表示本步无效
         
         # 注册编码
         self._register_encoding(child.encoding)
@@ -241,8 +253,20 @@ class AgingEvolutionNAS:
         # Or just run MAX_GEN steps? Usually MAX_GEN implies total evaluations.
         # Let's say we run until len(history) >= MAX_GEN
         
+        consecutive_failures = 0
+        max_consecutive_failures = 100  # 连续失败上限，防止无限循环
+        
         while len(self.history) - len(self.population) < self.max_gen:
-            self.step()
+            success = self.step()
+            
+            if not success:
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error(f"Too many consecutive duplicate failures ({max_consecutive_failures}). Stopping search.")
+                    break
+                continue
+            else:
+                consecutive_failures = 0  # 重置计数
             
             if (len(self.history) - len(self.population)) % 100 == 0:
                 self.save_checkpoint()
@@ -353,7 +377,8 @@ class AgingEvolutionNAS:
             avg_fitness = sum(fitnesses) / len(fitnesses)
             best_fitness = min(fitnesses)
         else:
-            avg_fitness = best_fitness = 0.0
+            avg_fitness = float('inf')  # 无有效数据时设为无穷大
+            best_fitness = float('inf')
             
         stats = {
             'generation': len(self.history)-len(self.population),

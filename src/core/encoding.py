@@ -70,6 +70,7 @@ class Individual:
     def copy(self) -> 'Individual':
         new_ind = Individual(copy.deepcopy(self.encoding))
         new_ind.fitness = self.fitness
+        new_ind.quick_score = self.quick_score
         return new_ind
     
     def __repr__(self):

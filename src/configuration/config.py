@@ -7,7 +7,6 @@ import os
 import random
 
 class Config:
-
     """
     配置类，包含所有超参数
     """
