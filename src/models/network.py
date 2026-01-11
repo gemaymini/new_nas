@@ -61,14 +61,9 @@ class RegBlock(nn.Module):
         self.in_channels = in_channels
         self.mid_channels = block_params.out_channels
         self.pool_stride = block_params.pool_stride
-        # 输出通道数 = 中间通道数 × expansion
-        # 当 EXPANSION=1 时，out_channels = mid_channels，与原逻辑兼容
-        # 当 EXPANSION=2 时，类似 ResNeXt 的扩展方式
         self.out_channels = self.mid_channels * config.EXPANSION
-        self.groups = min(block_params.groups, self.mid_channels)
+        self.groups = block_params.groups
         self.has_senet = block_params.has_senet == 1
-        
-        # 新增参数
         self.activation_type = block_params.activation_type
         self.dropout_rate = block_params.dropout_rate
         self.skip_type = block_params.skip_type  # 0=add, 1=concat, 2=none
@@ -80,9 +75,6 @@ class RegBlock(nn.Module):
             self.final_out_channels = self.out_channels + in_channels
         else:
             self.final_out_channels = self.out_channels
-        
-        while self.mid_channels % self.groups != 0:
-            self.groups = self.groups // 2 if self.groups > 1 else 1
             
         self.conv1 = nn.Conv2d(in_channels, self.mid_channels, 
                                kernel_size=1, stride=1, padding=0, bias=False)
@@ -115,8 +107,6 @@ class RegBlock(nn.Module):
             else:
                 self.shortcut = nn.Identity()
         elif self.skip_type == 1:  # concat
-            # concat 模式需要对 identity 进行下采样（如果 stride != 1）
-            # 使用与主路径相同的 kernel_size 和 padding 保持一致性
             if block_params.pool_stride != 1:
                 self.shortcut = nn.AvgPool2d(kernel_size=3, 
                                               stride=block_params.pool_stride,
@@ -129,10 +119,7 @@ class RegBlock(nn.Module):
         if self.has_senet:
             # SENet 应用于最终输出通道
             se_channels = self.final_out_channels
-            # reduction 应该基于实际的 se_channels 计算，确保 se_channels // reduction >= 1
-            reduction = min(config.SENET_REDUCTION, se_channels)
-            if se_channels // reduction < 1:
-                reduction = se_channels  # 确保至少有 1 个隐藏单元
+            reduction = config.SENET_REDUCTION
             self.se = SEBlock(se_channels, reduction)
         else:
             self.se = None
@@ -262,18 +249,3 @@ class NetworkBuilder:
     def calculate_param_count(encoding: List[int], input_channels: int = 3, num_classes: int = 10) -> int:
         network = NetworkBuilder.build_from_encoding(encoding, input_channels, num_classes)
         return network.get_param_count()
-    
-    @staticmethod
-    def test_forward(encoding: List[int], input_size: tuple = None) -> bool:
-        if input_size is None:
-            input_size = config.NTK_INPUT_SIZE
-        try:
-            network = NetworkBuilder.build_from_encoding(encoding)
-            network.eval()
-            x = torch.randn(1, *input_size)
-            with torch.no_grad():
-                network(x)
-            return True
-        except Exception as e:
-            logger.error(f"Forward test failed: {e}")
-            return False

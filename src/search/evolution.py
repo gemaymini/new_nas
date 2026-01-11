@@ -75,28 +75,12 @@ class AgingEvolutionNAS:
         Duplicate individuals are skipped.
         """
         logger.info("Initializing population...")
-        max_attempts_per_individual = 100  # 每个位置最多尝试次数，防止无限循环
         
         while len(self.population) < self.population_size:
-            # 尝试生成不重复的个体
-            attempts = 0
-            ind = None
-            while attempts < max_attempts_per_individual:
-                ind = population_initializer.create_valid_individual()
-                if ind is None:
-                    # 无法生成有效个体，继续尝试
-                    attempts += 1
-                    continue
-                if not self._is_duplicate(ind.encoding):
-                    break
+            ind = population_initializer.create_valid_individual()
+            if self._is_duplicate(ind.encoding):
                 self.duplicate_count += 1
-                attempts += 1
-                
-            if ind is None or attempts >= max_attempts_per_individual:
-                if ind is None:
-                    logger.error("Failed to create valid individual, retrying...")
-                    continue  # 重新开始外层循环
-                logger.warning(f"Max attempts reached, using last generated individual")
+                continue
             
             # 注册编码并评估
             self._register_encoding(ind.encoding)
@@ -130,12 +114,7 @@ class AgingEvolutionNAS:
             current_pop_list, 
             tournament_size=config.TOURNAMENT_SIZE,
             num_winners=config.TOURNAMENT_WINNERS
-        )
-        
-        # If not enough parents (shouldn't happen if pop_size >= 2), duplicate best
-        if len(parents) < 2:
-            return parents[0], parents[0]
-            
+        )    
         return parents[0], parents[1]
 
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
@@ -144,8 +123,10 @@ class AgingEvolutionNAS:
         """
         child = None
         
+        do_crossover = random.random() < config.PROB_CROSSOVER
+        do_mutation = random.random() < config.PROB_MUTATION or not do_crossover 
         # Crossover
-        if random.random() < config.PROB_CROSSOVER:
+        if do_crossover:
             # Generate 2 children, pick random one
             c1, c2 = crossover_operator.crossover(parent1, parent2)
             child = random.choice([c1, c2])
@@ -153,20 +134,19 @@ class AgingEvolutionNAS:
             child = random.choice([parent1, parent2]).copy()
 
         # Mutation
-        if random.random() < config.PROB_MUTATION:
+        if do_mutation:
             child = mutation_operator.mutate(child)
             
         # Validate and Repair
         if not Encoder.validate_encoding(child.encoding):
-            child = self._repair_individual(child, [parent1, parent2])
+            child = self._repair_individual(child)
             
         return child
 
-    def _repair_individual(self, ind: Individual, parents: List[Individual]) -> Individual:
-        for _ in range(20):
-            ind = mutation_operator.mutate(random.choice(parents))
+    def _repair_individual(self, ind: Individual) -> Individual:
+        while True:
+            ind = mutation_operator.mutate(ind)
             if Encoder.validate_encoding(ind.encoding): return ind
-        return random.choice(parents).copy()
 
     def step(self) -> bool:
         """
@@ -179,12 +159,8 @@ class AgingEvolutionNAS:
         Returns:
             bool: True if a valid (non-duplicate) child was generated, False otherwise
         """
-        max_attempts = 50  # 最大尝试次数，防止无限循环
-        attempts = 0
         child = None
-        is_duplicate = True
-        
-        while attempts < max_attempts:
+        while True:
             # 1. Select Parents
             parent1, parent2 = self._select_parents()
             
@@ -194,17 +170,9 @@ class AgingEvolutionNAS:
             # 3. Check for duplicates
             if self._is_duplicate(child.encoding):
                 self.duplicate_count += 1
-                attempts += 1
                 continue  # 重复模型，重新生成
-            
-            # 找到非重复模型，跳出循环
-            is_duplicate = False
-            break
-        
-        if is_duplicate:
-            # 达到最大尝试次数且仍然是重复的，记录警告但不注册（不计入有效搜索）
-            logger.warning(f"Max attempts ({max_attempts}) reached in step, all generated children were duplicates. Skipping this step.")
-            return False  # 返回 False 表示本步无效
+            else:
+                break
         
         # 注册编码
         self._register_encoding(child.encoding)
@@ -248,26 +216,10 @@ class AgingEvolutionNAS:
         
         if not self.population:
             self.initialize_population()
-            
-        # Continue until we have generated MAX_GEN individuals (including initial pop)
-        # Or just run MAX_GEN steps? Usually MAX_GEN implies total evaluations.
-        # Let's say we run until len(history) >= MAX_GEN
-        
-        consecutive_failures = 0
-        max_consecutive_failures = 100  # 连续失败上限，防止无限循环
         
         while len(self.history) - len(self.population) < self.max_gen:
-            success = self.step()
-            
-            if not success:
-                consecutive_failures += 1
-                if consecutive_failures >= max_consecutive_failures:
-                    logger.error(f"Too many consecutive duplicate failures ({max_consecutive_failures}). Stopping search.")
-                    break
-                continue
-            else:
-                consecutive_failures = 0  # 重置计数
-            
+            self.step()
+        
             if (len(self.history) - len(self.population)) % 100 == 0:
                 self.save_checkpoint()
 
@@ -423,17 +375,9 @@ class AgingEvolutionNAS:
             checkpoint = pickle.load(f)
         self.population = deque(checkpoint['population'])
         self.history = checkpoint['history']
-        # 加载NTK历史（兼容旧checkpoint）
         self.ntk_history = checkpoint.get('ntk_history', [])
-        # 加载去重状态（兼容旧checkpoint）
         self.seen_encodings = checkpoint.get('seen_encodings', set())
         self.duplicate_count = checkpoint.get('duplicate_count', 0)
-        # 如果是旧的checkpoint没有seen_encodings，从history重建
-        if not self.seen_encodings and self.history:
-            for ind in self.history:
-                self._register_encoding(ind.encoding)
-            logger.info(f"Rebuilt seen_encodings from history: {len(self.seen_encodings)} unique encodings")
-        # 加载时间统计（兼容旧checkpoint）
         self.search_time = checkpoint.get('search_time', 0.0)
         self.short_train_time = checkpoint.get('short_train_time', 0.0)
         self.full_train_time = checkpoint.get('full_train_time', 0.0)

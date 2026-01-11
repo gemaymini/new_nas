@@ -14,7 +14,6 @@ BLOCK_PARAM_COUNT = 9
 class BlockParams:
     """
     Block参数封装类
-    扩展参数：activation_type, dropout_rate, skip_type, kernel_size
     """
     def __init__(self, out_channels: int, groups: int, pool_type: int, 
                  pool_stride: int, has_senet: int, activation_type: int = 0,
@@ -24,25 +23,19 @@ class BlockParams:
         self.pool_type = pool_type
         self.pool_stride = pool_stride
         self.has_senet = has_senet
-        # 新增参数
         self.activation_type = activation_type  # 0=ReLU, 1=SiLU, 2=GELU
         self.dropout_rate = dropout_rate        # Dropout率
         self.skip_type = skip_type              # 0=add, 1=concat, 2=none
         self.kernel_size = kernel_size          # 卷积核大小: 3, 5, 7
     
     def to_list(self) -> List:
-        # dropout_rate 使用整数编码 (乘以100存储)
         dropout_encoded = int(self.dropout_rate * 100)
         return [self.out_channels, self.groups, self.pool_type, 
                 self.pool_stride, self.has_senet, self.activation_type,
-                dropout_encoded, self.skip_type, self.kernel_size]
+                self.dropout_rate, self.skip_type, self.kernel_size]
     
     @classmethod
     def from_list(cls, params: List) -> 'BlockParams':
-        # 兼容旧版5参数编码
-        if len(params) == 5:
-            return cls(params[0], params[1], params[2], params[3], params[4])
-        # 新版9参数编码
         dropout_rate = params[6] / 100.0  # 解码dropout率
         return cls(params[0], params[1], params[2], params[3], params[4],
                    params[5], dropout_rate, params[7], params[8])
@@ -80,42 +73,6 @@ class Encoder:
     """
     编码器类
     """
-    @staticmethod
-    def random_block_params() -> BlockParams:
-        out_channels = random.choice(config.CHANNEL_OPTIONS)
-        # 确保 groups <= out_channels 且 out_channels % groups == 0
-        valid_groups = [g for g in config.GROUP_OPTIONS if g <= out_channels and out_channels % g == 0]
-        groups = random.choice(valid_groups) if valid_groups else 1
-        pool_type = random.choice(config.POOL_TYPE_OPTIONS)
-        pool_stride = random.choice(config.POOL_STRIDE_OPTIONS)
-        has_senet = random.choice(config.SENET_OPTIONS)
-        # 新增参数
-        activation_type = random.choice(config.ACTIVATION_OPTIONS)
-        dropout_rate = random.choice(config.DROPOUT_OPTIONS)
-        skip_type = random.choice(config.SKIP_TYPE_OPTIONS)
-        kernel_size = random.choice(config.KERNEL_SIZE_OPTIONS)
-        
-        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
-                           activation_type, dropout_rate, skip_type, kernel_size)
-    
-    @staticmethod
-    def create_random_encoding() -> List[int]:
-        unit_num = random.randint(config.MIN_UNIT_NUM, config.MAX_UNIT_NUM)
-        encoding = [unit_num]
-        
-        block_nums = []
-        for _ in range(unit_num):
-            block_num = random.randint(config.MIN_BLOCK_NUM, config.MAX_BLOCK_NUM)
-            block_nums.append(block_num)
-            encoding.append(block_num)
-        
-        for block_num in block_nums:
-            for _ in range(block_num):
-                block_params = Encoder.random_block_params()
-                encoding.extend(block_params.to_list())
-        
-        return encoding
-    
     @staticmethod
     def decode(encoding: List[int]) -> Tuple[int, List[int], List[List[BlockParams]]]:
         if not encoding:
@@ -168,12 +125,9 @@ class Encoder:
                 for bp in unit_blocks:
                     if bp.out_channels not in config.CHANNEL_OPTIONS: return False
                     if bp.groups not in config.GROUP_OPTIONS: return False
-                    if bp.groups > bp.out_channels: return False
-                    if bp.out_channels % bp.groups != 0: return False  # 确保能整除
                     if bp.pool_type not in config.POOL_TYPE_OPTIONS: return False
                     if bp.pool_stride not in config.POOL_STRIDE_OPTIONS: return False
                     if bp.has_senet not in config.SENET_OPTIONS: return False
-                    # 新增参数验证
                     if bp.activation_type not in config.ACTIVATION_OPTIONS: return False
                     if bp.dropout_rate not in config.DROPOUT_OPTIONS: return False
                     if bp.skip_type not in config.SKIP_TYPE_OPTIONS: return False

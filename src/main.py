@@ -8,7 +8,8 @@ import sys
 import os
 import random
 import numpy as np
-
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
@@ -30,11 +31,6 @@ def set_seed(seed: int):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Evolutionary NAS')
-    
-    # Evolution params
-    parser.add_argument('--population_size', type=int, default=config.POPULATION_SIZE)
-    parser.add_argument('--max_gen', type=int, default=config.MAX_GEN)
-    
     # Dataset params
     parser.add_argument('--dataset', type=str, default=config.FINAL_DATASET,
                         choices=['cifar10', 'cifar100', 'imagenet'],
@@ -56,8 +52,6 @@ def main():
 
     args = parse_args()
     set_seed(args.seed)
-    config.POPULATION_SIZE = args.population_size
-    config.MAX_GEN = args.max_gen
     config.FINAL_DATASET = args.dataset
     
     # Update config based on dataset

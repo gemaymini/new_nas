@@ -23,7 +23,6 @@ class SearchSpace:
         self.pool_type_options = config.POOL_TYPE_OPTIONS
         self.pool_stride_options = config.POOL_STRIDE_OPTIONS
         self.senet_options = config.SENET_OPTIONS
-        # 新增参数选项
         self.activation_options = config.ACTIVATION_OPTIONS
         self.dropout_options = config.DROPOUT_OPTIONS
         self.skip_type_options = config.SKIP_TYPE_OPTIONS
@@ -38,13 +37,8 @@ class SearchSpace:
     def sample_channel(self) -> int:
         return random.choice(self.channel_options)
     
-    def sample_groups(self, out_channels: int = None) -> int:
-        """采样分组数，确保 out_channels 能被 groups 整除"""
-        if out_channels is None:
-            return random.choice(self.group_options)
-        # groups 必须 <= out_channels 且 out_channels % groups == 0
-        valid_groups = [g for g in self.group_options if g <= out_channels and out_channels % g == 0]
-        return random.choice(valid_groups) if valid_groups else 1
+    def sample_groups(self) -> int:
+        return random.choice(self.group_options)
     
     def sample_pool_type(self) -> int:
         return random.choice(self.pool_type_options)
@@ -73,11 +67,10 @@ class SearchSpace:
     
     def sample_block_params(self) -> BlockParams:
         out_channels = self.sample_channel()
-        groups = self.sample_groups(out_channels)
+        groups = self.sample_groups()
         pool_type = self.sample_pool_type()
         pool_stride = self.sample_pool_stride()
         has_senet = self.sample_senet()
-        # 新增参数
         activation_type = self.sample_activation()
         dropout_rate = self.sample_dropout()
         skip_type = self.sample_skip_type()
@@ -89,18 +82,15 @@ class PopulationInitializer:
     """
     种群初始化器
     """
-    def __init__(self, search_space: SearchSpace):
+    def __init__(self,search_space:SearchSpace):
         self.search_space = search_space
     
-    def create_valid_individual(self, max_attempts: int = 1000) -> Optional[Individual]:
-        for _ in range(max_attempts):
+    def create_valid_individual(self) -> Optional[Individual]:
+        while True:
             encoding = self._create_constrained_encoding()
             if Encoder.validate_encoding(encoding):
                 return Individual(encoding)
-        logger.warning(f"Failed to create valid individual after {max_attempts} attempts")
-        return None
 
-            
     
     def _create_constrained_encoding(self) -> List[int]:
         max_downsampling = Encoder.get_max_downsampling()

@@ -103,22 +103,14 @@ class MutationOperator:
         ]
         
         # 随机选择 num_params_to_modify 个参数进行变异
-        params_to_modify = random.sample(all_params, min(num_params_to_modify, len(all_params)))
-        
-        # 如果要修改 out_channels，需要先处理（因为可能影响 groups）
-        if 'out_channels' in params_to_modify:
-            new_value = search_space.sample_channel()
-            old_block.out_channels = new_value
-            # 确保 groups 仍然有效（能整除新的 out_channels）
-            if old_block.groups > new_value or new_value % old_block.groups != 0:
-                old_block.groups = search_space.sample_groups(new_value)
-        
-        # 处理其他参数
+        params_to_modify = random.sample(all_params, num_params_to_modify)
+
         for param in params_to_modify:
             if param == 'out_channels':
-                continue  # 已处理
+                new_value = search_space.sample_channel()
+                old_block.out_channels = new_value
             elif param == 'groups':
-                old_block.groups = search_space.sample_groups(old_block.out_channels)
+                old_block.groups = search_space.sample_groups()
             elif param == 'pool_type':
                 old_block.pool_type = search_space.sample_pool_type()
             elif param == 'pool_stride':
@@ -139,28 +131,79 @@ class MutationOperator:
     def mutate(self, individual: Individual) -> Individual:
         new_encoding = copy.deepcopy(individual.encoding)
         mutation_applied = False
+        applied_mutations = []
+        
+        # 记录原始状态
+        original_unit_num, original_block_nums, _ = Encoder.decode(individual.encoding)
         
         # 使用固定概率进行变异操作
         if random.random() < self.prob_swap_blocks:
-            new_encoding = self.swap_blocks(new_encoding); mutation_applied = True
+            new_encoding = self.swap_blocks(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('swap_blocks')
+            
         if random.random() < self.prob_swap_units:
-            new_encoding = self.swap_units(new_encoding); mutation_applied = True
+            new_encoding = self.swap_units(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('swap_units')
+            
         if random.random() < self.prob_add_unit:
-            new_encoding = self.add_unit(new_encoding); mutation_applied = True
+            new_encoding = self.add_unit(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('add_unit')
+            
         if random.random() < self.prob_add_block:
-            new_encoding = self.add_block(new_encoding); mutation_applied = True
+            new_encoding = self.add_block(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('add_block')
+            
         if random.random() < self.prob_delete_unit:
-            new_encoding = self.delete_unit(new_encoding); mutation_applied = True
+            new_encoding = self.delete_unit(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('delete_unit')
+            
         if random.random() < self.prob_delete_block:
-            new_encoding = self.delete_block(new_encoding); mutation_applied = True
+            new_encoding = self.delete_block(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('delete_block')
+            
         if random.random() < self.prob_modify_block:
-            new_encoding = self.modify_block(new_encoding); mutation_applied = True
+            new_encoding = self.modify_block(new_encoding)
+            mutation_applied = True
+            applied_mutations.append('modify_block')
             
         if not mutation_applied:
             new_encoding = self.modify_block(new_encoding)
+            applied_mutations.append('modify_block')
             
         new_individual = Individual(new_encoding)
-        logger.log_mutation("mutate", individual.id, new_individual.id)
+        
+        # 记录变异后状态
+        new_unit_num, new_block_nums, _ = Encoder.decode(new_encoding)
+        
+        # 记录详细的变异信息
+        mutation_details = {
+            'applied_mutations': applied_mutations,
+            'original_structure': {
+                'unit_num': original_unit_num,
+                'block_nums': original_block_nums,
+                'total_blocks': sum(original_block_nums)
+            },
+            'new_structure': {
+                'unit_num': new_unit_num,
+                'block_nums': new_block_nums,
+                'total_blocks': sum(new_block_nums)
+            },
+            'encoding_length_change': len(new_encoding) - len(individual.encoding)
+        }
+        
+        logger.log_detailed_mutation(
+            operation_type='combined_mutation',
+            parent_id=str(individual.id),
+            child_id=str(new_individual.id),
+            details=mutation_details
+        )
+        
         return new_individual
 
 class SelectionOperator:
@@ -187,29 +230,63 @@ class CrossoverOperator:
         c1_nums, c1_params = [], []
         c2_nums, c2_params = [], []
         
+        # 记录交叉详细信息
+        unit_selections = []  # 记录每个unit位置选择了哪个父个体
+        generated_units = []  # 记录哪些位置生成了新的unit
+        
         for i in range(new_unit_num):
             select_from_p1 = random.random() < 0.5
             
             # Helper to get block info from parent or random
-            def get_block_info(p_nums, p_params, idx):
+            def get_unit_info(p_nums, p_params, idx):
                 if idx < len(p_nums):
                     return p_nums[idx], copy.deepcopy(p_params[idx])
                 else:
+                    generated_units.append(idx)
                     nb = search_space.sample_block_num()
                     return nb, [search_space.sample_block_params() for _ in range(nb)]
 
-            bn1, bp1 = get_block_info(block_nums1, block_params_list1, i)
-            bn2, bp2 = get_block_info(block_nums2, block_params_list2, i)
+            bn1, bp1 = get_unit_info(block_nums1, block_params_list1, i)
+            bn2, bp2 = get_unit_info(block_nums2, block_params_list2, i)
             
             if select_from_p1:
                 c1_nums.append(bn1); c1_params.append(bp1)
                 c2_nums.append(bn2); c2_params.append(bp2)
+                unit_selections.append({'position': i, 'child1_from': 'parent1', 'child2_from': 'parent2'})
             else:
                 c1_nums.append(bn2); c1_params.append(bp2)
                 c2_nums.append(bn1); c2_params.append(bp1)
+                unit_selections.append({'position': i, 'child1_from': 'parent2', 'child2_from': 'parent1'})
 
         child1 = Individual(Encoder.encode(new_unit_num, c1_nums, c1_params))
         child2 = Individual(Encoder.encode(new_unit_num, c2_nums, c2_params))
+        
+        # 记录交叉详细信息
+        crossover_details = {
+            'parent_structures': {
+                'parent1': {'unit_num': unit_num1, 'block_nums': block_nums1, 'total_blocks': sum(block_nums1)},
+                'parent2': {'unit_num': unit_num2, 'block_nums': block_nums2, 'total_blocks': sum(block_nums2)}
+            },
+            'child_structures': {
+                'child1': {'unit_num': new_unit_num, 'block_nums': c1_nums, 'total_blocks': sum(c1_nums)},
+                'child2': {'unit_num': new_unit_num, 'block_nums': c2_nums, 'total_blocks': sum(c2_nums)}
+            },
+            'crossover_info': {
+                'new_unit_num': new_unit_num,
+                'unit_selections': unit_selections,
+                'generated_units': generated_units,
+                'selection_probability': 0.5
+            }
+        }
+        
+        logger.log_detailed_crossover(
+            parent1_id=str(parent1.id),
+            parent2_id=str(parent2.id),
+            child1_id=str(child1.id),
+            child2_id=str(child2.id),
+            details=crossover_details
+        )
+        
         return child1, child2
 
     def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:

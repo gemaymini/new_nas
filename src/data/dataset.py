@@ -104,7 +104,7 @@ class DatasetLoader:
         return trainloader, valloader
 
     @staticmethod
-    def get_ntk_trainloader(batch_size: int = 16, num_workers: int = 0, dataset_name: str = 'cifar10'):
+    def get_ntk_trainloader(batch_size: int = 64, num_workers: int = 0, dataset_name: str = 'cifar10'):
         """
         获取用于NTK计算的DataLoader
         通常使用较小的batch_size，且不进行数据增强

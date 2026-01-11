@@ -49,7 +49,7 @@ class NTKEvaluator:
         )
 
     def recal_bn(self, network: nn.Module, xloader, recal_batches: int, device):
-        """重置 BN 统计并用若干 batch 重新统计（与 ntk.py 中一致）"""
+        """重置 BN 统计并用若干 batch 重新统计"""
         for m in network.modules():
             if isinstance(m, torch.nn.BatchNorm2d):
                 m.running_mean.data.fill_(0)
@@ -69,8 +69,6 @@ class NTKEvaluator:
     def compute_ntk_condition_number(self, network: nn.Module, xloader, num_batch: int = -1, train_mode: bool = True) -> float:
         """严格按照 ntk.py 中的 get_ntk_n 逻辑计算单个网络的 NTK 条件数"""
         device = self.device if self.device == 'cpu' else 0
-
-        # ✅ 修复1: 使用 train 模式
         if train_mode:
             network.train()
         else:
@@ -94,25 +92,22 @@ class NTKEvaluator:
                 grad = []
                 for name, p in network.named_parameters():
                     if 'weight' in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach().clone())  # ✅ 需要 clone，防止 zero_grad 清空
-
+                        grad.append(p.grad.view(-1).detach().clone()) 
                 if grad:
-                    grads.append(torch.cat(grad, -1))  # ✅ 加上 dim=-1 保持一致
+                    grads.append(torch.cat(grad, -1))
 
-                network.zero_grad()  # ✅ 移到这里，和原始代码一致
-                # torch.cuda.empty_cache() # 移出循环以提升速度
+                network.zero_grad()
 
         if len(grads) == 0:
             return 100000.0
 
         grads_tensor = torch.stack(grads, 0)  # (N, C)
-        ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])  # ✅ 注意括号格式
+        ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])
 
-        # ✅ 修复2: 正确处理特征值
         try:
-            eigenvalues = torch.linalg.eigvalsh(ntk)  # 只返回特征值，更高效
+            eigenvalues = torch.linalg.eigvalsh(ntk)  
         except AttributeError:
-            eigenvalues, _ = torch.symeig(ntk)  # ✅ 正确解包
+            eigenvalues, _ = torch.symeig(ntk)  
 
         # 使用绝对值避免负特征值导致的负条件数
         eigenvalues_abs = torch.abs(eigenvalues)
@@ -144,13 +139,12 @@ class NTKEvaluator:
             if self.recalbn > 0:
                 network = self.recal_bn(network, self.trainloader, self.recalbn, self.device)
 
-            # ✅ 修复3: 多次计算取平均
             total_cond = 0.0
             for _ in range(num_runs):
                 cond = self.compute_ntk_condition_number(
                     network, self.trainloader, 
                     num_batch=self.num_batch, 
-                    train_mode=True  # ✅ 使用 train 模式
+                    train_mode=True  
                 )
                 total_cond += cond
             
@@ -160,6 +154,7 @@ class NTKEvaluator:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
             return 100000.0
+        
     def evaluate_individual(self, individual: Individual) -> float:
         try:
             network = NetworkBuilder.build_from_individual(
