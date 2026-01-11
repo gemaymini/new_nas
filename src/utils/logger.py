@@ -7,8 +7,6 @@ import os
 import logging
 import sys
 import time
-import json
-from typing import Dict, Any, List
 from configuration.config import config
 
 class Logger:
@@ -87,48 +85,6 @@ class Logger:
     def log_mutation(self, mut_type, old_id, new_id):
         """记录变异操作"""
         self.debug(f"Mutation {mut_type}: {old_id} -> {new_id}")
-    
-    def log_detailed_mutation(self, operation_type: str, parent_id: str, child_id: str, 
-                             details: Dict[str, Any]):
-        """记录详细的变异操作信息"""
-        record = {
-            'timestamp': time.time(),
-            'operation': 'mutation',
-            'type': operation_type,
-            'parent_id': parent_id,
-            'child_id': child_id,
-            'details': details
-        }
-        self._save_operation_record(record)
-        self.debug(f"Mutation {operation_type}: {parent_id} -> {child_id}, Details: {details}")
-    
-    def log_detailed_crossover(self, parent1_id: str, parent2_id: str, 
-                              child1_id: str, child2_id: str, details: Dict[str, Any]):
-        """记录详细的交叉操作信息"""
-        record = {
-            'timestamp': time.time(),
-            'operation': 'crossover',
-            'type': 'uniform_unit_crossover',
-            'parent1_id': parent1_id,
-            'parent2_id': parent2_id,
-            'child1_id': child1_id,
-            'child2_id': child2_id,
-            'details': details
-        }
-        self._save_operation_record(record)
-        self.debug(f"Crossover: ({parent1_id}, {parent2_id}) -> ({child1_id}, {child2_id}), Details: {details}")
-    
-    def _save_operation_record(self, record: Dict[str, Any]):
-        """保存操作记录到JSON文件"""
-        try:
-            if not os.path.exists(config.LOG_DIR):
-                os.makedirs(config.LOG_DIR)
-            
-            operations_file = os.path.join(config.LOG_DIR, 'operations_log.jsonl')
-            with open(operations_file, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
-        except Exception as e:
-            self.error(f"Failed to save operation record: {e}")
 
 
 # TensorBoard Logger Stub (Simplify for now, or implement if needed)

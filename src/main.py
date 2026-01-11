@@ -8,8 +8,6 @@ import sys
 import os
 import random
 import numpy as np
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 

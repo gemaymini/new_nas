@@ -80,6 +80,7 @@ class AgingEvolutionNAS:
             ind = population_initializer.create_valid_individual()
             if self._is_duplicate(ind.encoding):
                 self.duplicate_count += 1
+                print("重复模型，重新生成...")
                 continue
             
             # 注册编码并评估
@@ -147,6 +148,7 @@ class AgingEvolutionNAS:
         while True:
             ind = mutation_operator.mutate(ind)
             if Encoder.validate_encoding(ind.encoding): return ind
+            print("修复个体失败，重新变异...")
 
     def step(self) -> bool:
         """
@@ -170,6 +172,7 @@ class AgingEvolutionNAS:
             # 3. Check for duplicates
             if self._is_duplicate(child.encoding):
                 self.duplicate_count += 1
+                print("重复模型，重新生成...")
                 continue  # 重复模型，重新生成
             else:
                 break

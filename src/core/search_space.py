@@ -8,6 +8,7 @@ from typing import List, Optional
 from configuration.config import config
 from core.encoding import Encoder, Individual, BlockParams
 from utils.logger import logger
+from configuration.config import config
 
 class SearchSpace:
     """
@@ -90,9 +91,12 @@ class PopulationInitializer:
             encoding = self._create_constrained_encoding()
             if Encoder.validate_encoding(encoding):
                 return Individual(encoding)
+            print("生成的个体不合法，重新生成...")
+            print(encoding)
 
     
     def _create_constrained_encoding(self) -> List[int]:
+
         max_downsampling = Encoder.get_max_downsampling()
         unit_num = self.search_space.sample_unit_num()
         encoding = [unit_num]
@@ -104,17 +108,37 @@ class PopulationInitializer:
             encoding.append(block_num)
         
         downsampling_count = 0
+        current_channels = config.INIT_CONV_OUT_CHANNELS
         
         for block_num in block_nums:
             for _ in range(block_num):
-                block_params = self.search_space.sample_block_params()
-                
-                if downsampling_count >= max_downsampling and block_params.pool_stride == 2:
-                    block_params.pool_stride = 1
-                elif block_params.pool_stride == 2:
-                    downsampling_count += 1
-                
-                encoding.extend(block_params.to_list())
+                # 尝试生成有效的block参数，最多尝试10次
+                for attempt in range(10):
+                    block_params = self.search_space.sample_block_params()
+                    
+                    # 约束下采样
+                    if downsampling_count >= max_downsampling and block_params.pool_stride == 2:
+                        block_params.pool_stride = 1
+                    elif block_params.pool_stride == 2:
+                        downsampling_count += 1
+                    
+                    # 约束通道数
+                    out_channels = block_params.out_channels * config.EXPANSION
+                    if block_params.skip_type == 1:  # concat
+                        final_channels = out_channels + current_channels
+                    else:
+                        final_channels = out_channels
+                    
+                    if final_channels <= config.MAX_CHANNELS:
+                        current_channels = final_channels
+                        encoding.extend(block_params.to_list())
+                        break
+                else:
+                    # 如果10次都失败了，使用add模式强制通过
+                    block_params.skip_type = 0  # force add mode
+                    final_channels = out_channels
+                    current_channels = final_channels
+                    encoding.extend(block_params.to_list())
         
         return encoding
 

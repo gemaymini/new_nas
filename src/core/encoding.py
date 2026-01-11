@@ -32,7 +32,7 @@ class BlockParams:
         dropout_encoded = int(self.dropout_rate * 100)
         return [self.out_channels, self.groups, self.pool_type, 
                 self.pool_stride, self.has_senet, self.activation_type,
-                self.dropout_rate, self.skip_type, self.kernel_size]
+                dropout_encoded, self.skip_type, self.kernel_size]
     
     @classmethod
     def from_list(cls, params: List) -> 'BlockParams':
@@ -115,10 +115,12 @@ class Encoder:
             unit_num, block_nums, block_params_list = Encoder.decode(encoding)
             
             if not (config.MIN_UNIT_NUM <= unit_num <= config.MAX_UNIT_NUM):
+                print("Unit数量不合法")
                 return False
             
             for block_num in block_nums:
                 if not (config.MIN_BLOCK_NUM <= block_num <= config.MAX_BLOCK_NUM):
+                    print("Block数量不合法")
                     return False
             
             for unit_blocks in block_params_list:
@@ -134,10 +136,12 @@ class Encoder:
                     if bp.kernel_size not in config.KERNEL_SIZE_OPTIONS: return False
             
             if not Encoder.validate_feature_size(encoding):
+                print("特征图尺寸过小")
                 return False
             
             # 验证通道数不会爆炸（特别是 concat 模式）
             if not Encoder.validate_channel_count(encoding):
+                print("通道数爆炸")
                 return False
             
             return True
