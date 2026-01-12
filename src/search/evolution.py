@@ -123,24 +123,42 @@ class AgingEvolutionNAS:
         Generate ONE offspring using Crossover and Mutation.
         """
         child = None
+        ops = []
         
         do_crossover = random.random() < config.PROB_CROSSOVER
         do_mutation = random.random() < config.PROB_MUTATION or not do_crossover 
         # Crossover
         if do_crossover:
             # Generate 2 children, pick random one
-            c1, c2 = crossover_operator.crossover(parent1, parent2)
-            child = random.choice([c1, c2])
+            c1, c2, cross_detail = crossover_operator.crossover(parent1, parent2)
+            chosen_child, chosen_label = random.choice([(c1, "child1"), (c2, "child2")])
+            cross_detail["parent_ids"] = [parent1.id, parent2.id]
+            cross_detail["chosen_child"] = chosen_label
+            child = chosen_child
+            ops.append(cross_detail)
         else:
-            child = random.choice([parent1, parent2]).copy()
+            chosen_parent = random.choice([parent1, parent2])
+            child = chosen_parent.copy()
+            ops.append({
+                "op": "copy_parent",
+                "applied": True,
+                "source_parent_id": chosen_parent.id
+            })
 
         # Mutation
         if do_mutation:
             child = mutation_operator.mutate(child)
-            
+            # 变异结果中只保留本次变异记录（不累积历史）
+            if hasattr(child, "op_history"):
+                ops.extend(child.op_history)
+        child.op_history = ops
+
         # Validate and Repair
         if not Encoder.validate_encoding(child.encoding):
             child = self._repair_individual(child)
+            # 合并原始操作与修复变异
+            repair_ops = getattr(child, "op_history", [])
+            child.op_history = ops + repair_ops
             
         return child
 
@@ -186,6 +204,16 @@ class AgingEvolutionNAS:
         
         # 当前step（进化代数）
         current_step = len(self.history) - len(self.population) + 1
+
+        # 记录变异/交叉详细信息
+        logger.log_operation({
+            "step": current_step,
+            "child_id": child.id,
+            "parent_ids": [parent1.id, parent2.id],
+            "fitness": child.fitness,
+            "operations": child.op_history,
+            "encoding": child.encoding
+        })
         
         # 记录NTK值
         self.ntk_history.append((current_step, child.id, child.fitness, child.encoding.copy()))

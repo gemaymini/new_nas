@@ -59,11 +59,14 @@ class Individual:
         self.quick_score=0
         # 评估属性
         self.fitness = None
+        # 记录导致本个体的交叉/变异历程
+        self.op_history = []
         
     def copy(self) -> 'Individual':
         new_ind = Individual(copy.deepcopy(self.encoding))
         new_ind.fitness = self.fitness
         new_ind.quick_score = self.quick_score
+        new_ind.op_history = copy.deepcopy(self.op_history)
         return new_ind
     
     def __repr__(self):

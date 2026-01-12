@@ -8,8 +8,10 @@ import sys
 import os
 import random
 import numpy as np
-# Add src to python path
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+from pathlib import Path
+# Add project root to python path so `src` is importable
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 
 from configuration.config import config
 from search.evolution import AgingEvolutionNAS
@@ -100,4 +102,5 @@ def main():
         raise
 
 if __name__ == '__main__':
+    print(PROJECT_ROOT)
     main()

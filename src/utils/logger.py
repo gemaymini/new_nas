@@ -7,7 +7,28 @@ import os
 import logging
 import sys
 import time
+import json
 from configuration.config import config
+
+
+class OperationLogger:
+    """
+    负责将变异/交叉操作按 JSONL 记录，便于离线分析
+    """
+    def __init__(self, log_dir: str):
+        self.log_dir = log_dir
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+        self.filepath = os.path.join(self.log_dir, 'op_history.jsonl')
+
+    def log(self, record: dict):
+        try:
+            if not os.path.exists(self.log_dir):
+                os.makedirs(self.log_dir)
+            with open(self.filepath, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print(f"Operation log failed: {e}")
 
 class Logger:
     """
@@ -82,9 +103,26 @@ class Logger:
             msg += f", Params: {param_count}"
         self.info(msg)
 
-    def log_mutation(self, mut_type, old_id, new_id):
+    def log_mutation(self, mut_type, old_id, new_id, details=None, step=None):
         """记录变异操作"""
-        self.debug(f"Mutation {mut_type}: {old_id} -> {new_id}")
+        prefix = f"[Step {step}] " if step is not None else ""
+        msg = f"{prefix}Mutation {mut_type}: {old_id} -> {new_id}"
+        if details:
+            msg += f" | details: {details}"
+        self.debug(msg)
+
+    def log_operation(self, record: dict):
+        """
+        记录一条完整的交叉/变异操作日志并写入 JSONL
+        """
+        step = record.get("step")
+        child_id = record.get("child_id")
+        fitness = record.get("fitness")
+        self.info(f"Step {step}: child {child_id} fitness={fitness}")
+        try:
+            op_logger.log(record)
+        except Exception as e:
+            self.warning(f"Failed to persist op log: {e}")
 
 
 # TensorBoard Logger Stub (Simplify for now, or implement if needed)
@@ -117,6 +155,7 @@ class FailedLogger:
         # Implementation skipped for brevity
         pass
 
+op_logger = OperationLogger(config.LOG_DIR)
 logger = Logger()
 tb_logger = TBLogger()
 failed_logger = FailedLogger()

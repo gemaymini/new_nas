@@ -124,7 +124,7 @@ class ThreeStageEA:
         child = None
         
         if random.random() < config.PROB_CROSSOVER:
-            c1, c2 = crossover_operator.crossover(parent1, parent2)
+            c1, c2, _ = crossover_operator.crossover(parent1, parent2)
             child = random.choice([c1, c2])
         else:
             child = random.choice([parent1, parent2]).copy()
@@ -300,7 +300,7 @@ class TraditionalEA:
         child = None
         
         if random.random() < config.PROB_CROSSOVER:
-            c1, c2 = crossover_operator.crossover(parent1, parent2)
+            c1, c2, _ = crossover_operator.crossover(parent1, parent2)
             child = random.choice([c1, c2])
         else:
             child = random.choice([parent1, parent2]).copy()
