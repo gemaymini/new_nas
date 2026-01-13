@@ -69,7 +69,7 @@ class ExperimentLogger:
         self.log_data["meta"]["checksum"] = checksum
         
         self.save_log()
-        print(f"Experiment finished. Log saved to {self.log_file}")
+        print(f"INFO: experiment_complete log_saved={self.log_file}")
         return self.log_file
 
     def save_log(self):
@@ -83,7 +83,7 @@ class ExperimentLogger:
             with open(self.log_file, 'w') as f:
                 json.dump(self.log_data, f, indent=2)
         except Exception as e:
-            print(f"Error saving log: {e}")
+            print(f"ERROR: save_log failed: {e}")
 
 class Visualizer:
     ENABLE_VIRTUAL_POINTS = True
@@ -160,19 +160,25 @@ class Visualizer:
         
         if self.ENABLE_VIRTUAL_POINTS:
             n_generate = max(0, self.TARGET_TOTAL - n_real)
-            print(f"Real data points: {n_real}, generating virtual points: {n_generate}")
+            print(f"INFO: virtual_points real={n_real} generate={n_generate}")
             x_gen, y_gen = self._generate_virtual_points(short_acc_real, full_acc_real, n_generate)
             
             short_acc = np.concatenate([short_acc_real, x_gen]) if len(x_gen) > 0 else short_acc_real
             full_acc = np.concatenate([full_acc_real, y_gen]) if len(y_gen) > 0 else full_acc_real
             
             if len(x_gen) > 0:
-                print(f"Real data - X range: [{short_acc_real.min():.2f}, {short_acc_real.max():.2f}], Y range: [{full_acc_real.min():.2f}, {full_acc_real.max():.2f}]")
-                print(f"Generated data - X range: [{x_gen.min():.2f}, {x_gen.max():.2f}], Y range: [{y_gen.min():.2f}, {y_gen.max():.2f}]")
+                print(
+                    f"INFO: real_range short_acc=[{short_acc_real.min():.2f}, {short_acc_real.max():.2f}] "
+                    f"full_acc=[{full_acc_real.min():.2f}, {full_acc_real.max():.2f}]"
+                )
+                print(
+                    f"INFO: generated_range short_acc=[{x_gen.min():.2f}, {x_gen.max():.2f}] "
+                    f"full_acc=[{y_gen.min():.2f}, {y_gen.max():.2f}]"
+                )
         else:
             short_acc = short_acc_real
             full_acc = full_acc_real
-            print(f"Virtual points disabled. Using {n_real} real data points only.")
+            print(f"INFO: virtual_points disabled real={n_real}")
         
         n_total = len(short_acc)
         
@@ -237,9 +243,11 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
         "device": config.DEVICE
     })
     
-    print(f"Starting Correlation Experiment")
-    print(f"Models: {num_models}, Full Epochs: {full_epochs}, Short Epochs: {short_epochs}")
-    print(f"Logs will be saved to {output_dir}")
+    print(
+        f"INFO: start_correlation_experiment models={num_models} full_epochs={full_epochs} "
+        f"short_epochs={short_epochs} log_dir={output_dir} dataset={config.FINAL_DATASET} "
+        f"device={config.DEVICE}"
+    )
     
     try:
         # 1. Setup Data
@@ -256,7 +264,7 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
         
         # 2. Generate and Train Models
         for i in range(num_models):
-            print(f"\n[{i+1}/{num_models}] Generating and training model...")
+            print(f"INFO: model_progress idx={i+1}/{num_models} status=build_train")
             
             # Randomly sample an individual
             ind = population_initializer.create_valid_individual()
@@ -268,7 +276,7 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
             )
             
             # Train for Full Epochs
-            print(f"Training model {i} for {full_epochs} epochs...")
+            print(f"INFO: training model={i} epochs={full_epochs}")
             start_train = time.time()
             best_acc, history = trainer.train_network(
                 network, trainloader, testloader, epochs=full_epochs
@@ -288,7 +296,10 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
             if acc_full == 0.0 and history:
                 acc_full = history[-1]['test_acc']
                 
-            print(f"Model {i}: Short({short_epochs})={acc_short:.2f}%, Full({full_epochs})={acc_full:.2f}%")
+            print(
+                f"INFO: model_result id={i} short_acc={acc_short:.2f}% "
+                f"full_acc={acc_full:.2f}%"
+            )
             
             # Log Result
             exp_logger.log_model_result(i, ind.encoding, history, acc_short, acc_full)
@@ -298,7 +309,7 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
             torch.cuda.empty_cache()
             
     except Exception as e:
-        print(f"Experiment failed: {e}")
+        print(f"ERROR: experiment failed: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -306,13 +317,13 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
         log_file = exp_logger.finish()
         
         # Visualization
-        print("Generating visualizations...")
+        print("INFO: generating_visualizations")
         try:
             viz = Visualizer(log_file, output_dir)
             viz.generate_all()
-            print("Visualizations generated.")
+            print("INFO: visualizations_generated")
         except Exception as e:
-            print(f"Visualization failed: {e}")
+            print(f"WARN: visualization_failed: {e}")
 
 if __name__ == "__main__":
     # You can adjust these numbers for the real run

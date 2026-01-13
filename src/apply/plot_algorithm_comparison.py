@@ -248,24 +248,22 @@ def plot_algorithm_comparison(data: dict,
         base_path = output_path.rsplit('.', 1)[0]
         plt.savefig(base_path + '.png', dpi=300, bbox_inches='tight')
         plt.savefig(base_path + '.pdf', bbox_inches='tight')
-        print(f"Saved to: {base_path}.pdf")
+        print(f"INFO: plot_saved={base_path}.pdf")
     
     if show_plot:
         plt.show()
     plt.close()
 
 def print_statistics(data: dict):
-    print("\n" + "=" * 60)
-    print("                    Experiment Statistics")
-    print("=" * 60)
+    print("INFO: experiment_stats")
     for key, label in LABELS.items():
         if key in data and len(data[key]['params']) > 0:
             params = np.array(data[key]['params'])
             accs = np.array(data[key]['accs'])
-            print(f"\n{label}:")
-            print(f"  Count: {len(params)}")
-            print(f"  Acc: {accs.mean():.2f}% ± {accs.std():.2f}%")
-    print("\n" + "=" * 60)
+            print(
+                f"INFO: {label} count={len(params)} "
+                f"acc_mean={accs.mean():.2f}% acc_std={accs.std():.2f}%"
+            )
 
 def main():
     parser = argparse.ArgumentParser(description='Generate Paper Plots')
@@ -282,10 +280,10 @@ def main():
     elif args.json_path and os.path.exists(args.json_path):
         data = load_experiment_results(args.json_path)
     elif args.use_simulated or (args.json_path is None and args.json_dir is None):
-        print("Using simulated data...")
+        print("INFO: using_simulated_data")
         data = generate_simulated_data()
     else:
-        print("Error: Provide valid input.")
+        print("ERROR: invalid input; provide --json_path or --json_dir or --use_simulated")
         return
     
     print_statistics(data)

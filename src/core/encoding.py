@@ -119,12 +119,12 @@ class Encoder:
             unit_num, block_nums, block_params_list = Encoder.decode(encoding)
 
             if not (config.MIN_UNIT_NUM <= unit_num <= config.MAX_UNIT_NUM):
-                print("Unit数量不合法")
+                print("WARN: invalid unit count")
                 return False
 
             for block_num in block_nums:
                 if not (config.MIN_BLOCK_NUM <= block_num <= config.MAX_BLOCK_NUM):
-                    print("Block数量不合法")
+                    print("WARN: invalid block count")
                     return False
 
             for unit_blocks in block_params_list:
@@ -158,11 +158,11 @@ class Encoder:
                         return False
 
             if not Encoder.validate_feature_size(encoding):
-                print("特征图尺寸过小")
+                print("WARN: feature map too small")
                 return False
 
             if not Encoder.validate_channel_count(encoding):
-                print("通道数爆炸")
+                print("WARN: channel limit exceeded")
                 return False
 
             return True
@@ -234,15 +234,12 @@ class Encoder:
         except Exception as e:
             param_count_str = f"Error calculating params: {e}"
 
-        print(f"\n{'=' * 60}")
-        print("Network Architecture")
-        print(f"{'=' * 60}")
-        print(f"Number of Units: {unit_num}")
-        print(f"Blocks per Unit: {block_nums}")
-        print(f"Total Parameters: {param_count_str}")
-        print(f"{'-' * 60}")
+        print(
+            f"INFO: architecture units={unit_num} blocks_per_unit={block_nums} "
+            f"params={param_count_str}"
+        )
         for i, unit_blocks in enumerate(block_params_list):
-            print(f"\nUnit {i + 1} ({len(unit_blocks)} blocks):")
+            print(f"INFO: unit {i + 1} blocks={len(unit_blocks)}")
             for j, bp in enumerate(unit_blocks):
                 pool_type_str = "MaxPool" if bp.pool_type == 0 else "AvgPool"
                 senet_str = "Yes" if bp.has_senet == 1 else "No"
@@ -250,8 +247,10 @@ class Encoder:
                 skip_names = {0: "add", 1: "concat", 2: "none"}
                 activation_str = activation_names.get(bp.activation_type, "ReLU")
                 skip_str = skip_names.get(bp.skip_type, "add")
-                print(f"  Block {j + 1}: out_ch={bp.out_channels}, groups={bp.groups}, "
-                      f"pool={pool_type_str}, stride={bp.pool_stride}, SENet={senet_str}, "
-                      f"act={activation_str}, dropout={bp.dropout_rate}, skip={skip_str}, "
-                      f"kernel={bp.kernel_size}, expansion={bp.expansion}")
-        print(f"\n{'=' * 60}\n")
+                print(
+                    "INFO: block "
+                    f"{i + 1}.{j + 1} out_ch={bp.out_channels} groups={bp.groups} "
+                    f"pool={pool_type_str} stride={bp.pool_stride} senet={senet_str} "
+                    f"act={activation_str} dropout={bp.dropout_rate} skip={skip_str} "
+                    f"kernel={bp.kernel_size} expansion={bp.expansion}"
+                )

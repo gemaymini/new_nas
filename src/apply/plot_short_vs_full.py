@@ -52,10 +52,10 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
         log_files = glob.glob(os.path.join(log_dir, 'experiment_log_*.json'))
     
     if not log_files:
-        print(f"No experiment_log_*.json files found in {log_dir}")
+        print(f"WARN: no experiment_log_*.json in {log_dir}")
         return [], {}
     
-    print(f"Found {len(log_files)} log files.")
+    print(f"INFO: log_files found={len(log_files)}")
     
     all_data = []
     meta_info = {}
@@ -92,9 +92,9 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
                 }
                 
         except Exception as e:
-            print(f"Error loading {log_path}: {e}")
+            print(f"ERROR: failed to load {log_path}: {e}")
     
-    print(f"Loaded {len(all_data)} models.")
+    print(f"INFO: models_loaded={len(all_data)}")
     return all_data, meta_info
 
 def generate_virtual_points(x_real: np.ndarray, y_real: np.ndarray, n_generate: int):
@@ -170,7 +170,7 @@ def compute_statistics(short_acc: np.ndarray, full_acc: np.ndarray):
 
 def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     if not all_data:
-        print("No data to plot!")
+        print("WARN: no data to plot")
         return
     
     short_acc_real = np.array([d['short_acc'] for d in all_data], dtype=float)
@@ -182,29 +182,27 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
         x_gen, y_gen = generate_virtual_points(short_acc_real, full_acc_real, n_generate)
         short_acc = np.concatenate([short_acc_real, x_gen]) if len(x_gen) > 0 else short_acc_real
         full_acc = np.concatenate([full_acc_real, y_gen]) if len(y_gen) > 0 else full_acc_real
-        print(f"Total points (Real+Virtual): {len(short_acc)}")
+        print(f"INFO: total_points={len(short_acc)} real={n_real}")
     else:
         short_acc, full_acc = short_acc_real, full_acc_real
-        print(f"Using real data only: {len(short_acc)} points")
+        print(f"INFO: using_real_data points={len(short_acc)}")
     
     stats = compute_statistics(short_acc, full_acc)
     
     short_epochs = meta_info.get('short_epochs', '?')
     full_epochs = meta_info.get('full_epochs', '?')
     
-    print("\n" + "="*60)
-    print("Correlation Statistics")
-    print("="*60)
-    print(f"Pearson r:    {stats['pearson_r']:.4f}")
-    print(f"Spearman rho: {stats['spearman_rho']:.4f}")
-    print(f"Linear Fit:   y = {stats['slope']:.4f}x + {stats['intercept']:.4f}")
-    print(f"R²:           {stats['r2']:.4f}")
-    print("="*60)
+    print(
+        f"INFO: correlation_stats pearson_r={stats['pearson_r']:.4f} "
+        f"spearman_rho={stats['spearman_rho']:.4f} "
+        f"fit=y={stats['slope']:.4f}x+{stats['intercept']:.4f} "
+        f"r2={stats['r2']:.4f}"
+    )
 
     fig, ax = plt.subplots(figsize=(7.5, 6))
     
-    point_color = '
-    line_color = '
+    point_color = 'tab:blue'
+    line_color = 'tab:red'
     
     ax.scatter(short_acc, full_acc, 
                c=point_color, 
@@ -261,7 +259,7 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     
     plt.savefig(save_pdf, bbox_inches='tight')
     plt.savefig(save_png, dpi=300, bbox_inches='tight')
-    print(f"\nPlot saved to:\n  {save_pdf}\n  {save_png}")
+    print(f"INFO: plot_saved pdf={save_pdf} png={save_png}")
     
 
 def main():
@@ -281,7 +279,7 @@ def main():
         all_data, meta_info = load_experiment_logs(log_dir=args.log_dir)
     
     if not all_data:
-        print("No valid data found!")
+        print("WARN: no valid data found")
         sys.exit(1)
     
     plot_correlation(all_data, meta_info, output_path=args.output)

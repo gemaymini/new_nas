@@ -111,7 +111,7 @@ class ExperimentLogger:
         self.log_data["meta"]["checksum"] = checksum
         
         self.save_log()
-        print(f"Experiment finished. Log saved to {self.log_file}")
+        print(f"INFO: experiment_complete log_saved={self.log_file}")
         return self.log_file
 
     def save_log(self):
@@ -119,7 +119,7 @@ class ExperimentLogger:
             with open(self.log_file, 'w') as f:
                 json.dump(self.log_data, f, indent=2)
         except Exception as e:
-            print(f"Error saving log: {e}")
+            print(f"ERROR: save_log failed: {e}")
 
 class Visualizer:
     def __init__(self, log_file, output_dir):
@@ -233,9 +233,10 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
         "device": config.DEVICE
     })
     
-    print(f"Starting NTK Correlation Experiment")
-    print(f"Models: {num_models}, Short Epochs: {short_epochs}")
-    print(f"Logs will be saved to {output_dir}")
+    print(
+        f"INFO: start_ntk_experiment models={num_models} short_epochs={short_epochs} "
+        f"log_dir={output_dir} dataset={config.FINAL_DATASET} device={config.DEVICE}"
+    )
     
     # Start Hardware Monitoring
     exp_logger.start_monitoring(interval=2)
@@ -255,25 +256,25 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
         
         # 2. Generate and Evaluate Models
         for i in range(num_models):
-            print(f"\n[{i+1}/{num_models}] Generating and evaluating model...")
+            print(f"INFO: model_progress idx={i+1}/{num_models} status=eval_train")
             
             # Randomly sample
             ind = population_initializer.create_valid_individual()
             ind.id = i
             
             # A. Calculate NTK
-            print(f"Calculating NTK for model {i}...")
+            print(f"INFO: ntk_calculate model={i}")
             ntk_evaluator.evaluate_individual(ind)
             ntk_cond = ind.fitness
                 
-            print(f"Model {i}: NTK Cond={ntk_cond:.2f}")
+            print(f"INFO: ntk_result model={i} ntk_cond={ntk_cond:.2f}")
             
             # B. Short Training
             network = NetworkBuilder.build_from_individual(
                 ind, input_channels=3, num_classes=num_classes
             )
             
-            print(f"Training model {i} for {short_epochs} epochs...")
+            print(f"INFO: training model={i} epochs={short_epochs}")
             start_train = time.time()
             best_acc, history = trainer.train_network(
                 network, trainloader, testloader, epochs=short_epochs
@@ -284,7 +285,7 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             if history:
                 short_acc = history[-1]['test_acc'] # Last epoch accuracy
                 
-            print(f"Model {i}: Short Acc={short_acc:.2f}%")
+            print(f"INFO: model_result id={i} short_acc={short_acc:.2f}%")
             
             # Log Result
             exp_logger.log_model_result(i, ind.encoding, history, ntk_cond, short_acc)
@@ -294,7 +295,7 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             torch.cuda.empty_cache()
             
     except Exception as e:
-        print(f"Experiment failed: {e}")
+        print(f"ERROR: experiment failed: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -303,13 +304,13 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
         log_file = exp_logger.finish()
         
         # Visualization
-        print("Generating visualizations...")
+        print("INFO: generating_visualizations")
         try:
             viz = Visualizer(log_file, output_dir)
             viz.generate_all()
-            print("Visualizations generated.")
+            print("INFO: visualizations_generated")
         except Exception as e:
-            print(f"Visualization failed: {e}")
+            print(f"WARN: visualization_failed: {e}")
 
 if __name__ == "__main__":
     run_ntk_experiment(num_models=10, short_epochs=15)

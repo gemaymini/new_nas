@@ -99,9 +99,9 @@ def main():
     if fit_plot:
         outputs.append(fit_plot)
 
-    print("Saved plots:")
+    print(f"INFO: saved_plots count={len(outputs)}")
     for p in outputs:
-        print(" -", p)
+        print(f"INFO: saved_plot={p}")
 
 
 if __name__ == "__main__":

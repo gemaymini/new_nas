@@ -15,14 +15,14 @@ from models.network import NetworkBuilder
 
 def inspect_model(model_path: str):
     if not os.path.exists(model_path):
-        print(f"Error: Model file not found: {model_path}")
+        print(f"ERROR: model file not found: {model_path}")
         return
 
-    print(f"Loading model from {model_path}...")
+    print(f"INFO: loading_model={model_path}")
     try:
         checkpoint = torch.load(model_path, map_location='cpu')
     except Exception as e:
-        print(f"Error loading model: {e}")
+        print(f"ERROR: failed to load checkpoint: {e}")
         return
 
     encoding = None
@@ -37,35 +37,25 @@ def inspect_model(model_path: str):
                 if k not in ['state_dict', 'encoding', 'history']:
                     metadata[k] = v
         elif 'state_dict' in checkpoint:
-            print("Warning: Checkpoint only contains state_dict (legacy format).")
+            print("WARN: checkpoint only contains state_dict (legacy format)")
             state_dict = checkpoint['state_dict']
         else:
             state_dict = checkpoint
     else:
-        print("Error: Unknown checkpoint format.")
+        print("ERROR: unknown checkpoint format")
         return
 
     if encoding:
-        print("\n" + "="*50)
-        print("Model Metadata:")
-        print("="*50)
+        print(f"INFO: metadata items={len(metadata)}")
         for k, v in metadata.items():
-            print(f"{k}: {v}")
-            
-        print("\n" + "="*50)
-        print("Architecture Encoding:")
-        print("="*50)
-        print(encoding)
-        
-        print("\n" + "="*50)
-        print("Architecture Details:")
-        print("="*50)
+            print(f"INFO: meta {k}={v}")
+
+        print(f"INFO: encoding={encoding}")
+        print("INFO: architecture_details")
         Encoder.print_architecture(encoding)
         
         try:
-            print("\n" + "="*50)
-            print("PyTorch Network Structure:")
-            print("="*50)
+            print("INFO: network_structure")
             ind = Individual(encoding)
             
             num_classes = 10
@@ -78,25 +68,25 @@ def inspect_model(model_path: str):
             network = NetworkBuilder.build_from_individual(
                 ind, input_channels=3, num_classes=num_classes
             )
-            print(network)
+            for line in str(network).splitlines():
+                print(f"INFO: {line}")
             
             param_count = network.get_param_count()
-            print(f"\nTotal Parameters: {param_count:,}")
+            print(f"INFO: total_params={param_count:,}")
             
         except Exception as e:
-            print(f"Could not build network for visualization: {e}")
+            print(f"WARN: network build failed: {e}")
 
     else:
-        print("\nError: No encoding found in checkpoint.")
-        print("This appears to be a legacy model file or a raw state_dict.")
-        print("Cannot reconstruct architecture structure without encoding.")
+        print("ERROR: no encoding found in checkpoint; cannot reconstruct architecture")
+        print("INFO: checkpoint appears to be legacy state_dict")
         
         if state_dict:
-            print("\nState Dict Keys (Layer Names):")
+            print("INFO: state_dict_keys first=20")
             for k in list(state_dict.keys())[:20]:
-                print(k)
+                print(f"INFO: key={k}")
             if len(state_dict) > 20:
-                print("...")
+                print(f"INFO: key=... remaining={len(state_dict) - 20}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inspect NAS Model Architecture')

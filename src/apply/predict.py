@@ -41,17 +41,17 @@ import argparse
 
 def predict_image(model_path: str, image_path: str, encoding_str: str = None, device: str = 'cpu'):
     if not os.path.exists(model_path):
-        print(f"Error: Model file not found: {model_path}")
+        print(f"ERROR: model file not found: {model_path}")
         return
     if not os.path.exists(image_path):
-        print(f"Error: Image file not found: {image_path}")
+        print(f"ERROR: image file not found: {image_path}")
         return
 
-    print(f"Loading model from {model_path}...")
+    print(f"INFO: loading_model={model_path}")
     try:
         checkpoint = torch.load(model_path, map_location=device)
     except Exception as e:
-        print(f"Error loading model: {e}")
+        print(f"ERROR: failed to load checkpoint: {e}")
         return
 
     encoding = None
@@ -61,15 +61,15 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         encoding = checkpoint['encoding']
         state_dict = checkpoint['state_dict']
         acc = checkpoint.get('accuracy', 'N/A')
-        print(f"Model Accuracy on Validation: {acc}")
+        print(f"INFO: checkpoint_accuracy={acc}")
     elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
         state_dict = checkpoint['state_dict']
-        print("Warning: Checkpoint only contains state_dict.")
+        print("WARN: checkpoint only contains state_dict")
     elif isinstance(checkpoint, dict) and 'fc.weight' in checkpoint:
         state_dict = checkpoint
-        print("Warning: Checkpoint is a raw state_dict.")
+        print("WARN: checkpoint is raw state_dict")
     else:
-        print("Error: Unknown checkpoint format.")
+        print("ERROR: unknown checkpoint format")
         return
 
     if encoding is None:
@@ -77,34 +77,33 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
             try:
                 import ast
                 encoding = ast.literal_eval(encoding_str)
-                print(f"Using provided encoding: {encoding}")
+                print(f"INFO: using_provided_encoding={encoding}")
             except Exception as e:
-                print(f"Error parsing provided encoding: {e}")
+                print(f"ERROR: failed to parse provided encoding: {e}")
                 return
         else:
-            print("Error: The .pth file does not contain architecture encoding.")
-            print("For legacy models, please provide the encoding manually using --encoding argument.")
-            print("Example: python predict.py model.pth image.jpg --encoding \"[3, 2, 2, 2, ...]\"")
+            print("ERROR: checkpoint missing encoding; provide --encoding")
+            print("INFO: usage_example=python src/apply/predict.py model.pth image.jpg --encoding \"[3, 2, 2, 2, ...]\"")
             return
 
 
     num_classes = 10 # Default
     if 'fc.weight' in state_dict:
         num_classes = state_dict['fc.weight'].shape[0]
-        print(f"Detected {num_classes} classes from model weights.")
+        print(f"INFO: num_classes_detected={num_classes} source=fc")
     elif 'classifier.weight' in state_dict:
         num_classes = state_dict['classifier.weight'].shape[0]
-        print(f"Detected {num_classes} classes from model weights (classifier).")
+        print(f"INFO: num_classes_detected={num_classes} source=classifier")
     
     classes = None
     if num_classes == 10:
         classes = CIFAR10_CLASSES
-        print("Using CIFAR-10 class labels.")
+        print("INFO: class_labels=cifar10")
     elif num_classes == 100:
         classes = CIFAR100_CLASSES
-        print("Using CIFAR-100 class labels.")
+        print("INFO: class_labels=cifar100")
     else:
-        print(f"Warning: Unknown number of classes {num_classes}. Using numerical labels.")
+        print(f"WARN: unknown class count {num_classes}; using numeric labels")
         classes = [str(i) for i in range(num_classes)]
 
     try:
@@ -117,9 +116,9 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         network.load_state_dict(state_dict)
         network.to(device)
         network.eval()
-        print("Network built and weights loaded successfully.")
+        print("INFO: network_ready")
     except Exception as e:
-        print(f"Error building network: {e}")
+        print(f"ERROR: failed to build network: {e}")
         return
 
     try:
@@ -132,7 +131,7 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         image = Image.open(image_path).convert('RGB')
         input_tensor = transform(image).unsqueeze(0).to(device)
     except Exception as e:
-        print(f"Error processing image: {e}")
+        print(f"ERROR: failed to process image: {e}")
         return
 
     with torch.no_grad():
@@ -148,12 +147,11 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
             
         confidence = probabilities[0][idx].item()
 
-    print(f"\nPrediction Result:")
-    print(f"Image: {image_path}")
-    print(f"Class: {predicted_class}")
-    print(f"Confidence: {confidence:.2%}")
-    
-    print("\nTop 3 Predictions:")
+    print(
+        f"INFO: prediction image={image_path} class={predicted_class} "
+        f"confidence={confidence:.2%}"
+    )
+    print("INFO: top_predictions")
     top_k = min(3, num_classes)
     top_prob, top_idx = torch.topk(probabilities, top_k)
     for i in range(top_k):
@@ -163,7 +161,7 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         else:
             cls = f"Class {idx_val}"
         prob = top_prob[0][i].item()
-        print(f"{i+1}. {cls}: {prob:.2%}")
+        print(f"INFO: top{i+1} class={cls} prob={prob:.2%}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='NAS Model Prediction')

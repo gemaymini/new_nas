@@ -53,8 +53,9 @@ class NetworkTrainer:
                 progress = (batch_idx + 1) / len(trainloader) * 100
                 acc = 100.0 * correct / total
                 print(
-                    f"\r  [Epoch {epoch}/{total_epochs}] Batch: {batch_idx + 1}/{len(trainloader)} "
-                    f"({progress:.1f}%) | Loss: {running_loss/(batch_idx+1):.4f} | Acc: {acc:.2f}%",
+                    f"\rPROGRESS: Train {epoch}/{total_epochs} "
+                    f"batch {batch_idx + 1}/{len(trainloader)} "
+                    f"({progress:.1f}%) loss={running_loss/(batch_idx+1):.4f} acc={acc:.2f}%",
                     end="",
                     flush=True,
                 )
@@ -161,8 +162,8 @@ class NetworkTrainer:
 
                 es_info = f" | ES: {patience_counter}/{patience}" if early_stopping else ""
                 print(
-                    f"  [Epoch {epoch}/{epochs}] Train Acc: {train_acc:.2f}% | "
-                    f"Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%{es_info}"
+                    f"INFO: epoch {epoch}/{epochs} train_acc={train_acc:.2f}% "
+                    f"test_acc={test_acc:.2f}% best={best_acc:.2f}%{es_info}"
                 )
 
                 if early_stopping and patience_counter >= patience:

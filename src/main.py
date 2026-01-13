@@ -106,5 +106,5 @@ def main():
 
 
 if __name__ == "__main__":
-    print(PROJECT_ROOT)
+    print(f"INFO: project_root={PROJECT_ROOT}")
     main()

@@ -23,23 +23,23 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
     Load a model from .pth and continue training.
     """
     if not os.path.exists(model_path):
-        print(f"Error: Model file not found: {model_path}")
+        print(f"ERROR: model file not found: {model_path}")
         return
 
-    print(f"Loading model from {model_path}...")
+    print(f"INFO: loading_model={model_path}")
     try:
         checkpoint = torch.load(model_path, map_location=config.DEVICE)
     except Exception as e:
-        print(f"Error loading checkpoint: {e}")
+        print(f"ERROR: failed to load checkpoint: {e}")
         return
 
     # 1. Restore Architecture
     if 'encoding' not in checkpoint:
-        print("Error: Checkpoint does not contain 'encoding'. Cannot reconstruct network.")
+        print("ERROR: encoding missing; cannot reconstruct network")
         return
     
     encoding = checkpoint['encoding']
-    print(f"Model Encoding: {encoding}")
+    print(f"INFO: encoding={encoding}")
     
     # Create dummy individual for NetworkBuilder
     ind = Individual(encoding)
@@ -63,9 +63,9 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
     # 2. Load Weights
     if 'state_dict' in checkpoint:
         network.load_state_dict(checkpoint['state_dict'])
-        print("Weights loaded successfully.")
+        print("INFO: weights loaded")
     else:
-        print("Warning: Checkpoint does not contain 'state_dict'. Training from scratch (with restored architecture).")
+        print("WARN: no state_dict; training from scratch")
 
     # 3. Setup Trainer
     trainer = NetworkTrainer(config.DEVICE)
@@ -73,13 +73,12 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
     # Optional: override LR if provided
     # Note: NetworkTrainer.train_network takes lr argument.
     
-    print(f"Starting continuation training for {epochs} epochs...")
-    print(f"Dataset: {config.FINAL_DATASET}")
-    print(f"Using hyperparameters from config (unless overridden):")
-    print(f"  LR: {lr if lr is not None else config.LEARNING_RATE}")
-    print(f"  Weight Decay: {config.WEIGHT_DECAY}")
-    print(f"  AdamW Betas: {config.ADAMW_BETAS}")
-    print(f"  AdamW Eps: {config.ADAMW_EPS}")
+    print(f"INFO: training epochs={epochs} dataset={config.FINAL_DATASET}")
+    print(
+        "INFO: hyperparams "
+        f"lr={lr if lr is not None else config.LEARNING_RATE} "
+        f"weight_decay={config.WEIGHT_DECAY} betas={config.ADAMW_BETAS} eps={config.ADAMW_EPS}"
+    )
     
     # 4. Train
     best_acc, history = trainer.train_network(
@@ -107,9 +106,9 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
     }
     
     torch.save(save_dict, new_save_path)
-    print(f"\nTraining completed.")
-    print(f"Best Accuracy: {best_acc:.2f}%")
-    print(f"New model saved to: {new_save_path}")
+    print("INFO: training complete")
+    print(f"INFO: best_acc={best_acc:.2f}%")
+    print(f"INFO: saved={new_save_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Continue training a model from .pth file')

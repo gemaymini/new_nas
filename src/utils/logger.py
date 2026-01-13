@@ -26,7 +26,7 @@ class OperationLogger:
             with open(self.filepath, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception as e:
-            print(f"Operation log failed: {e}")
+            print(f"ERROR: operation log failed: {e}")
 
 
 class Logger:
@@ -124,7 +124,7 @@ class TBLogger:
                     os.makedirs(config.TENSORBOARD_DIR)
                 self.writer = SummaryWriter(config.TENSORBOARD_DIR)
             except ImportError:
-                print("TensorBoard not installed, skipping.")
+                print("WARN: TensorBoard not installed; skipping")
 
     def log_generation_stats(self, gen, stats):
         if self.writer:

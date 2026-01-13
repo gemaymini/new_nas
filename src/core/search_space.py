@@ -95,8 +95,7 @@ class PopulationInitializer:
             encoding = self._create_constrained_encoding()
             if Encoder.validate_encoding(encoding):
                 return Individual(encoding)
-            print("生成的个体不合法，重新生成...")
-            print(encoding)
+            print(f"WARN: invalid individual; resampling encoding={encoding}")
 
     def _create_constrained_encoding(self) -> List[int]:
         max_downsampling = Encoder.get_max_downsampling()

@@ -64,7 +64,7 @@ def load_and_process_data():
     all_data = []
     log_files = glob.glob(os.path.join(RESULTS_DIR, 'ntk_experiment_log_*.json'))
     if not log_files:
-        print(f'No ntk_experiment_log_*.json files found in {RESULTS_DIR}!')
+        print(f"WARN: no ntk_experiment_log_*.json in {RESULTS_DIR}")
         exit(1)
 
     for log_path in log_files:
@@ -72,7 +72,7 @@ def load_and_process_data():
             with open(log_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            print(f"Error reading {log_path}: {e}")
+            print(f"ERROR: failed to read {log_path}: {e}")
             continue
             
         models = data.get('models', [])
@@ -94,10 +94,10 @@ def load_and_process_data():
                 })
 
     if not all_data:
-        print('No valid data found!')
+        print("WARN: no valid data found")
         exit(1)
 
-    print(f"Total data points before deduplication: {len(all_data)}")
+    print(f"INFO: data_points total={len(all_data)}")
     seen_encodings = set()
     unique_data = []
     for d in all_data:
@@ -105,7 +105,7 @@ def load_and_process_data():
         if enc_key not in seen_encodings:
             seen_encodings.add(enc_key)
             unique_data.append(d)
-    print(f"Unique data points after deduplication: {len(unique_data)}")
+    print(f"INFO: data_points unique={len(unique_data)}")
     
     return unique_data
 
@@ -116,7 +116,7 @@ def generate_virtual_points(x_real, y_real, target_total):
     if n_generate == 0:
         return np.array([]), np.array([])
 
-    print(f"Generating {n_generate} virtual points to reach total of {target_total}...")
+    print(f"INFO: virtual_points generate={n_generate} target_total={target_total}")
     
     x_mean, x_std = np.mean(x_real), np.std(x_real)
     y_mean, y_std = np.mean(y_real), np.std(y_real)
@@ -190,16 +190,17 @@ def main():
     y_mean = float(np.mean(y))
     y_std = float(np.std(y))
     
-    print("=== NTK vs Short Acc Stats ===")
-    print(f"Total Samples (Real+Virtual): {n_total} (Real: {n_real})")
-    print(f"Pearson r: {pearson_r:.4f}")
-    print(f"Spearman rho: {spearman_rho:.4f}")
-    print(f"Linear Fit: y = {a:.4f} x + {b:.4f}, R^2 = {r2:.4f}")
+    print(
+        f"INFO: ntk_shortacc_stats total={n_total} real={n_real} "
+        f"pearson_r={pearson_r:.4f} spearman_rho={spearman_rho:.4f} "
+        f"fit=y={a:.4f}x+{b:.4f} r2={r2:.4f}"
+    )
 
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    point_color = '
-    line_color = '
+    point_color = '#1f77b4'  # blue for scatter points
+    line_color = '#d62728'   # red for fitted line
+
     
     ax.scatter(x, y, 
                c=point_color, 
@@ -252,7 +253,7 @@ def main():
     plt.savefig(save_path_pdf, bbox_inches='tight')
     plt.savefig(save_path_png, dpi=300, bbox_inches='tight')
     
-    print(f'Plot saved to: {save_path_pdf}')
+    print(f"INFO: plot_saved={save_path_pdf}")
 
 if __name__ == '__main__':
     main()

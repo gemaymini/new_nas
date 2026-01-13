@@ -372,7 +372,7 @@ class FinalEvaluator:
         best_accuracy = 0.0
 
         for idx, individual in enumerate(top_individuals):
-            print(f"\n[{idx + 1}/{top_k}] Evaluating Individual {individual.id}")
+            print(f"INFO: evaluating individual {individual.id} ({idx + 1}/{top_k})")
             acc, result = self.evaluate_individual(individual, epochs)
             results.append(result)
 
@@ -408,7 +408,7 @@ class FitnessEvaluator:
 
         for idx, ind in enumerate(population):
             if show_progress:
-                print(f"\r[NTK Eval] {idx+1}/{total}", end="", flush=True)
+                print(f"\rPROGRESS: NTK {idx+1}/{total}", end="", flush=True)
             self.ntk_evaluator.evaluate_individual(ind)
 
             if (idx + 1) % 5 == 0:

@@ -47,7 +47,7 @@ def load_ntk_history_from_json(json_path):
 
 def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     if not ntk_history:
-        print("No NTK history to plot!")
+        print("WARN: no ntk history to plot")
         return
     
     steps = []
@@ -61,7 +61,7 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
             individual_ids.append(ind_id)
     
     if not steps:
-        print("No valid NTK values to plot!")
+        print("WARN: no valid ntk values to plot")
         return
     
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
@@ -170,27 +170,18 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"NTK curve saved to {output_path}")
-    
-    print("\n" + "="*60)
-    print("NTK Statistics Summary")
-    print("="*60)
-    print(f"Total Individuals: {len(ntk_values)}")
-    print(f"Best NTK:          {min(ntk_values):.4f}")
-    print(f"Mean NTK:          {np.mean(ntk_values):.4f}")
-    print(f"Median NTK:        {np.median(ntk_values):.4f}")
-    print(f"Std NTK:           {np.std(ntk_values):.4f}")
-    print(f"Worst NTK:         {max(ntk_values):.4f}")
-    
-    print("\n" + "-"*60)
-    print("Top 10 Best Individuals:")
-    print("-"*60)
+    print(f"INFO: ntk_curve_saved={output_path}")
+    print(
+        f"INFO: ntk_stats total={len(ntk_values)} best={min(ntk_values):.4f} "
+        f"mean={np.mean(ntk_values):.4f} median={np.median(ntk_values):.4f} "
+        f"std={np.std(ntk_values):.4f} worst={max(ntk_values):.4f}"
+    )
+    print("INFO: ntk_top10_best")
     for i, (ntk, ind_id) in enumerate(sorted_ntk[:10]):
         for step, id_, n, enc in ntk_history:
             if id_ == ind_id and n == ntk:
-                print(f"  {i+1}. ID={ind_id:4d}, NTK={ntk:.4f}, Step={step}")
+                print(f"INFO: top10 idx={i+1} id={ind_id} ntk={ntk:.4f} step={step}")
                 break
-    print("="*60)
 
 def main():
     parser = argparse.ArgumentParser(description='Plot NTK curve from checkpoint or JSON')
@@ -205,7 +196,7 @@ def main():
         default_json = 'logs/ntk_history.json'
         if os.path.exists(default_json):
             args.json = default_json
-            print(f"Using default JSON: {default_json}")
+            print(f"INFO: using_default_json={default_json}")
         else:
             checkpoint_dir = 'checkpoints'
             if os.path.exists(checkpoint_dir):
@@ -213,23 +204,22 @@ def main():
                 if files:
                     files.sort(key=lambda x: os.path.getmtime(os.path.join(checkpoint_dir, x)), reverse=True)
                     args.checkpoint = os.path.join(checkpoint_dir, files[0])
-                    print(f"Using latest checkpoint: {args.checkpoint}")
+                    print(f"INFO: using_latest_checkpoint={args.checkpoint}")
     
     if not args.checkpoint and not args.json:
-        print("Error: Please provide --checkpoint or --json file path")
-        print("Usage examples:")
-        print("  python src/apply/plot_ntk_curve.py --checkpoint checkpoints/checkpoint_step100.pkl")
-        print("  python src/apply/plot_ntk_curve.py --json logs/ntk_history.json")
+        print("ERROR: missing --checkpoint or --json")
+        print("INFO: usage_example=python src/apply/plot_ntk_curve.py --checkpoint checkpoints/checkpoint_step100.pkl")
+        print("INFO: usage_example=python src/apply/plot_ntk_curve.py --json logs/ntk_history.json")
         sys.exit(1)
     
     if args.checkpoint:
-        print(f"Loading from checkpoint: {args.checkpoint}")
+        print(f"INFO: loading_checkpoint={args.checkpoint}")
         ntk_history = load_ntk_history_from_checkpoint(args.checkpoint)
     else:
-        print(f"Loading from JSON: {args.json}")
+        print(f"INFO: loading_json={args.json}")
         ntk_history = load_ntk_history_from_json(args.json)
     
-    print(f"Loaded {len(ntk_history)} NTK records")
+    print(f"INFO: ntk_records_loaded={len(ntk_history)}")
     
     plot_ntk_curve(ntk_history, args.output, args.title)
 

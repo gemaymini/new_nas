@@ -69,7 +69,7 @@ def plot_comparison(evolution_curve, random_curve,
     rand_all_filt = filter_values(random_all_ntk)
 
     if not evo_curve_filt or not rand_curve_filt:
-        print("Error: Not enough valid data points found.")
+        print("ERROR: insufficient valid data points")
         return
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 8))
@@ -122,7 +122,7 @@ def plot_comparison(evolution_curve, random_curve,
     base_path = output_path.rsplit('.', 1)[0]
     plt.savefig(base_path + '.png', dpi=300, bbox_inches='tight')
     plt.savefig(base_path + '.pdf', bbox_inches='tight')
-    print(f"Saved to: {base_path}.pdf")
+    print(f"INFO: plot_saved={base_path}.pdf")
     
     plt.close()
 
@@ -135,16 +135,17 @@ def main():
     
     args = parser.parse_args()
     
-    print(f"Loading data from {args.json_path}...")
+    print(f"INFO: loading_data={args.json_path}")
     evo_curve, rand_curve, evo_all, rand_all = load_data(args.json_path)
     
     min_evo = min([v for v in evo_curve if v < 100000]) if any(v < 100000 for v in evo_curve) else 999999
     min_rand = min([v for v in rand_curve if v < 100000]) if any(v < 100000 for v in rand_curve) else 999999
     
     improvement = (min_rand - min_evo) / min_rand * 100 if min_rand > 0 else 0
-    print(f"Best NTK (Aging Evolution): {min_evo:.2f}")
-    print(f"Best NTK (Random Search):   {min_rand:.2f}")
-    print(f"Improvement: {improvement:.2f}%")
+    print(
+        f"INFO: ntk_best evolution={min_evo:.2f} random={min_rand:.2f} "
+        f"improvement={improvement:.2f}%"
+    )
     
     if args.output is None:
         json_dir = os.path.dirname(args.json_path)

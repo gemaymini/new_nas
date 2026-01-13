@@ -25,7 +25,7 @@ def load_model_encoding(model_path: str) -> list:
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
-    print(f"Loading model from {model_path}...")
+    print(f"INFO: loading_model={model_path}")
     checkpoint = torch.load(model_path, map_location='cpu')
     
     encoding = None
@@ -33,11 +33,11 @@ def load_model_encoding(model_path: str) -> list:
     if isinstance(checkpoint, dict):
         if 'encoding' in checkpoint:
             encoding = checkpoint['encoding']
-            print(f"Found encoding in checkpoint")
+            print("INFO: encoding_found")
             
             for k, v in checkpoint.items():
                 if k not in ['state_dict', 'encoding', 'history']:
-                    print(f"  {k}: {v}")
+                    print(f"INFO: meta {k}={v}")
         else:
             raise ValueError("Checkpoint does not contain 'encoding' key. Cannot extract model structure.")
     else:
@@ -53,13 +53,11 @@ def build_fresh_network(encoding: list, input_channels: int = 3, num_classes: in
 
 def train_once(encoding: list, trainloader, testloader, epochs: int, 
                run_id: int, device: str = None) -> dict:
-    print(f"\n{'='*60}")
-    print(f"Training Run {run_id}")
-    print(f"{'='*60}")
+    print(f"INFO: training_run_start id={run_id}")
     
     network = build_fresh_network(encoding)
     param_count = network.get_param_count()
-    print(f"Network parameters: {param_count:,}")
+    print(f"INFO: network_params={param_count:,}")
     
     trainer = NetworkTrainer(device=device)
     
@@ -73,10 +71,10 @@ def train_once(encoding: list, trainloader, testloader, epochs: int,
     final_train_acc = history[-1]['train_acc']
     final_test_acc = history[-1]['test_acc']
     
-    print(f"\nRun {run_id} completed:")
-    print(f"  Best Test Accuracy: {best_acc:.2f}%")
-    print(f"  Final Train Accuracy: {final_train_acc:.2f}%")
-    print(f"  Final Test Accuracy: {final_test_acc:.2f}%")
+    print(
+        f"INFO: training_run_complete id={run_id} best_acc={best_acc:.2f}% "
+        f"final_train_acc={final_train_acc:.2f}% final_test_acc={final_test_acc:.2f}%"
+    )
     
     return {
         'run_id': run_id,
@@ -93,30 +91,25 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
                   save_results: bool = True) -> dict:
     encoding = load_model_encoding(model_path)
     
-    print("\n" + "="*60)
-    print("Architecture Encoding:")
-    print("="*60)
-    print(f"Encoding: {encoding}")
+    print(f"INFO: encoding={encoding}")
+    print("INFO: architecture_details")
     Encoder.print_architecture(encoding)
     
-    print("\n" + "="*60)
-    print("Loading Dataset")
-    print("="*60)
+    print("INFO: loading_dataset")
     if dataset == 'cifar10':
         trainloader, testloader = DatasetLoader.get_cifar10()
     elif dataset == 'cifar100':
         trainloader, testloader = DatasetLoader.get_cifar100()
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
-    print(f"Dataset: {dataset}")
-    print(f"Train batches: {len(trainloader)}, Test batches: {len(testloader)}")
+    print(f"INFO: dataset={dataset} train_batches={len(trainloader)} test_batches={len(testloader)}")
     
     if device is None:
         device = config.DEVICE
     if device == 'cuda' and not torch.cuda.is_available():
         device = 'cpu'
-        print("Warning: CUDA not available, using CPU")
-    print(f"Device: {device}")
+        print("WARN: cuda not available; using cpu")
+    print(f"INFO: device={device}")
     
     all_results = []
     best_accs = []
@@ -138,7 +131,7 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
             best_accs.append(result['best_acc'])
             final_test_accs.append(result['final_test_acc'])
     except KeyboardInterrupt:
-        print("\nTraining interrupted by user. Saving partial results...")
+        print("WARN: training interrupted by user; saving partial results")
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
         
@@ -174,11 +167,11 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         result_path = os.path.join(result_dir, result_filename)
         with open(result_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
-        print(f"Partial results saved to: {result_path}")
+        print(f"INFO: partial_results_saved={result_path}")
         
         return summary
     except Exception as e:
-        print(f"\nTraining failed with error: {e}. Saving partial results...")
+        print(f"ERROR: training failed: {e}; saving partial results")
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
         
@@ -215,33 +208,33 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         result_path = os.path.join(result_dir, result_filename)
         with open(result_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
-        print(f"Partial results saved to: {result_path}")
+        print(f"INFO: partial_results_saved={result_path}")
         
         return summary
     
     end_time = datetime.now()
     total_time = (end_time - start_time).total_seconds()
     
-    print("\n" + "="*60)
-    print("Training Summary")
-    print("="*60)
+    print(f"INFO: training_summary runs={num_runs} completed={len(all_results)}")
     
     best_acc_mean = np.mean(best_accs) if best_accs else float('nan')
     best_acc_std = np.std(best_accs) if best_accs else float('nan')
     final_acc_mean = np.mean(final_test_accs) if final_test_accs else float('nan')
     final_acc_std = np.std(final_test_accs) if final_test_accs else float('nan')
     
-    print(f"\nResults over {num_runs} runs:")
-    print(f"  Best Test Accuracy:  {best_acc_mean:.2f}% ± {best_acc_std:.2f}%")
-    print(f"  Final Test Accuracy: {final_acc_mean:.2f}% ± {final_acc_std:.2f}%")
-    print(f"\nIndividual Best Accuracies: {[f'{acc:.2f}%' for acc in best_accs]}")
-    print(f"Individual Final Accuracies: {[f'{acc:.2f}%' for acc in final_test_accs]}")
+    print(
+        f"INFO: summary_stats best_acc_mean={best_acc_mean:.2f}% "
+        f"best_acc_std={best_acc_std:.2f}% final_acc_mean={final_acc_mean:.2f}% "
+        f"final_acc_std={final_acc_std:.2f}%"
+    )
+    print(f"INFO: best_accs={[f'{acc:.2f}%' for acc in best_accs]}")
+    print(f"INFO: final_accs={[f'{acc:.2f}%' for acc in final_test_accs]}")
     if best_accs:
-        print(f"\nMin Best Acc: {min(best_accs):.2f}%, Max Best Acc: {max(best_accs):.2f}%")
+        print(f"INFO: best_acc_min={min(best_accs):.2f}% best_acc_max={max(best_accs):.2f}%")
     else:
-        print("\nNo runs completed; Min/Max unavailable.")
-    print(f"Total training time: {total_time/3600:.2f} hours")
-    print(f"Average time per run: {total_time/num_runs/60:.2f} minutes")
+        print("WARN: no runs completed; min/max unavailable")
+    print(f"INFO: total_time_hours={total_time/3600:.2f}")
+    print(f"INFO: avg_time_minutes={total_time/num_runs/60:.2f}")
     
     summary = {
         'status': 'completed',
@@ -272,7 +265,7 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         
         with open(result_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
-        print(f"\nResults saved to: {result_path}")
+        print(f"INFO: results_saved={result_path}")
     
     return summary
 
