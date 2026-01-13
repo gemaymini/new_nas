@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-批量绘制多个ntk实验日志的NTK条件数与小轮次准确率关系图
-优化版：符合CVPR/ICCV顶会审美标准
+Plot NTK versus short training accuracy.
 """
+
 
 import os
 import json
@@ -11,17 +11,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
-# --------------------- 1. 全局配置 (顶刊标准) ---------------------
-rcParams['pdf.fonttype'] = 42  # 字体嵌入
+rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
 rcParams['axes.unicode_minus'] = False
 
-# 字体设置：Times New Roman
 rcParams['font.family'] = 'serif'
 rcParams['font.serif'] = ['Times New Roman']
-rcParams['mathtext.fontset'] = 'stix' # 数学公式字体
+rcParams['mathtext.fontset'] = 'stix'
 
-# 线条与刻度
 rcParams['axes.linewidth'] = 1.2
 rcParams['axes.labelsize'] = 16
 rcParams['xtick.labelsize'] = 14
@@ -31,27 +28,21 @@ rcParams['ytick.major.size'] = 4
 rcParams['xtick.direction'] = 'in'
 rcParams['ytick.direction'] = 'in'
 
-# 关键：去除上边框和右边框 (L-shape)
 rcParams['axes.spines.top'] = False
 rcParams['axes.spines.right'] = False
 
-# 去除网格
 rcParams['axes.grid'] = False
 
-# 图例
 rcParams['legend.fontsize'] = 13
 rcParams['legend.frameon'] = True
 rcParams['legend.edgecolor'] = 'black'
 
-# --------------------- 2. 路径与参数配置 ---------------------
-# 请根据实际数据路径修改
 RESULTS_DIR = r"C:\Users\gemaymini\Desktop\data__history\ntk"
 SHORT_EPOCH = 15  
 
 ENABLE_VIRTUAL_POINTS = True 
 TARGET_TOTAL = 1000 
 
-# --------------------- 3. 数据处理函数 ---------------------
 def _rankdata(arr):
     """Compute average ranks for Spearman correlation"""
     a = np.asarray(arr)
@@ -89,7 +80,6 @@ def load_and_process_data():
             ntk = m.get('ntk_cond', None)
             encoding = m.get('encoding', None)
             history = m.get('history', [])
-            # 提取指定epoch的准确率
             acc = None
             for h in history:
                 if h.get('epoch') == SHORT_EPOCH:
@@ -107,7 +97,6 @@ def load_and_process_data():
         print('No valid data found!')
         exit(1)
 
-    # 去重
     print(f"Total data points before deduplication: {len(all_data)}")
     seen_encodings = set()
     unique_data = []
@@ -121,7 +110,6 @@ def load_and_process_data():
     return unique_data
 
 def generate_virtual_points(x_real, y_real, target_total):
-    """根据真实数据的分布生成虚拟数据点 (用于可视化密度)"""
     n_real = len(x_real)
     n_generate = max(0, target_total - n_real)
     
@@ -130,13 +118,11 @@ def generate_virtual_points(x_real, y_real, target_total):
 
     print(f"Generating {n_generate} virtual points to reach total of {target_total}...")
     
-    # 分布参数估计
     x_mean, x_std = np.mean(x_real), np.std(x_real)
     y_mean, y_std = np.mean(y_real), np.std(y_real)
     x_min, x_max = x_real.min(), x_real.max()
     y_min_bound, y_max_bound = y_real.min(), y_real.max()
     
-    # 相关系数
     corr = np.corrcoef(x_real, y_real)[0, 1]
     cov_xy = corr * x_std * y_std
     cov_matrix = np.array([
@@ -144,7 +130,6 @@ def generate_virtual_points(x_real, y_real, target_total):
         [cov_xy, y_std**2]
     ])
     
-    # 生成
     np.random.seed(42) 
     x_gen_list = []
     y_gen_list = []
@@ -170,16 +155,12 @@ def generate_virtual_points(x_real, y_real, target_total):
             
     return np.array(x_gen_list[:n_generate]), np.array(y_gen_list[:n_generate])
 
-# --------------------- 4. 主逻辑 ---------------------
 def main():
-    # 1. 加载数据
     unique_data = load_and_process_data()
     
-    # 提取真实数据 (取对数)
     x_real = np.log10(np.array([d['ntk'] for d in unique_data], dtype=float))
     y_real = np.array([d['acc'] for d in unique_data], dtype=float)
     
-    # 2. 生成/合并数据
     if ENABLE_VIRTUAL_POINTS:
         x_gen, y_gen = generate_virtual_points(x_real, y_real, TARGET_TOTAL)
         x = np.concatenate([x_real, x_gen]) if len(x_gen) > 0 else x_real
@@ -190,8 +171,6 @@ def main():
     n_total = len(x)
     n_real = len(x_real)
     
-    # 3. 统计分析
-    # 线性回归
     a, b = np.polyfit(x, y, 1)
     y_fit = a * x + b
     
@@ -208,7 +187,6 @@ def main():
     ry = _rankdata(y)
     spearman_rho = float(np.corrcoef(rx, ry)[0, 1])
     
-    # 基础统计
     y_mean = float(np.mean(y))
     y_std = float(np.std(y))
     
@@ -218,25 +196,21 @@ def main():
     print(f"Spearman rho: {spearman_rho:.4f}")
     print(f"Linear Fit: y = {a:.4f} x + {b:.4f}, R^2 = {r2:.4f}")
 
-    # --------------------- 5. 可视化 ---------------------
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    # 颜色定义
-    point_color = '#1F77B4' # 专业蓝
-    line_color = '#D62728'  # 强调红
+    point_color = '
+    line_color = '
     
-    # 绘制散点
     ax.scatter(x, y, 
                c=point_color, 
-               alpha=0.6,          # 透明度处理重叠
+               alpha=0.6,
                s=50, 
                marker='o',
-               edgecolors='white', # 白色描边增加层次感
+               edgecolors='white',
                linewidths=0.5,
                label=f'Models (n={n_total})',
                zorder=2)
     
-    # 绘制拟合线
     ax.plot(np.sort(x), a * np.sort(x) + b, 
             color=line_color, 
             linewidth=2.5, 
@@ -244,22 +218,17 @@ def main():
             label=f'Linear Fit ($R^2={r2:.3f}$)',
             zorder=3)
 
-    # 坐标轴标签
     ax.set_xlabel('$\log_{10}$(NTK Condition Number)', fontweight='bold')
     ax.set_ylabel(f'Short Training Accuracy @ Epoch {SHORT_EPOCH} (%)', fontweight='bold')
     
-    # 强制 L-shape (确保 rcParams 生效)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    # 自动坐标范围
     ax.set_xlim(x.min() - 0.1 * (x.max() - x.min()), x.max() + 0.1 * (x.max() - x.min()))
     ax.set_ylim(y.min() - 1.0, y.max() + 1.0)
     
-    # 图例 (内部，左下角或根据斜率调整)
     ax.legend(loc='best', frameon=True, fancybox=False, edgecolor='black')
 
-    # 统计文本框 (置于右下角外部，避免遮挡数据)
     stats_text = (
         f"Pearson $r$: {pearson_r:.3f}\n"
         f"Spearman $\\rho$: {spearman_rho:.3f}\n"
@@ -267,7 +236,6 @@ def main():
         f"Mean: {y_mean:.2f}% $\pm$ {y_std:.2f}%"
     )
     
-    # 使用 fig.text 放置在绝对位置
     plt.gcf().text(0.98, 0.05, stats_text, 
                    fontsize=11, 
                    va='bottom', 
@@ -276,7 +244,6 @@ def main():
 
     plt.tight_layout()
     
-    # 保存路径
     os.makedirs(RESULTS_DIR, exist_ok=True)
     base_name = f'ntk_vs_shortacc_scatter_epoch{SHORT_EPOCH}'
     save_path_pdf = os.path.join(RESULTS_DIR, f'{base_name}.pdf')
@@ -286,7 +253,6 @@ def main():
     plt.savefig(save_path_png, dpi=300, bbox_inches='tight')
     
     print(f'Plot saved to: {save_path_pdf}')
-    # plt.show() # 如需调试可取消注释
 
 if __name__ == '__main__':
     main()

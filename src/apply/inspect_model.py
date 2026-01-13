@@ -1,22 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-查看模型架构工具
+Inspect a saved model encoding and architecture.
 """
+
 import torch
 import sys
 import os
 import argparse
 
-# 添加src目录到路径 (apply现在位于src/apply/)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.encoding import Individual, Encoder
 from models.network import NetworkBuilder
 
 def inspect_model(model_path: str):
-    """
-    加载模型并打印其架构信息
-    """
     if not os.path.exists(model_path):
         print(f"Error: Model file not found: {model_path}")
         return
@@ -36,7 +33,6 @@ def inspect_model(model_path: str):
         if 'encoding' in checkpoint:
             encoding = checkpoint['encoding']
             state_dict = checkpoint.get('state_dict')
-            # 提取其他元数据
             for k, v in checkpoint.items():
                 if k not in ['state_dict', 'encoding', 'history']:
                     metadata[k] = v
@@ -44,7 +40,6 @@ def inspect_model(model_path: str):
             print("Warning: Checkpoint only contains state_dict (legacy format).")
             state_dict = checkpoint['state_dict']
         else:
-            # 假设整个dict就是state_dict
             state_dict = checkpoint
     else:
         print("Error: Unknown checkpoint format.")
@@ -67,14 +62,12 @@ def inspect_model(model_path: str):
         print("="*50)
         Encoder.print_architecture(encoding)
         
-        # 尝试构建网络以打印PyTorch结构
         try:
             print("\n" + "="*50)
             print("PyTorch Network Structure:")
             print("="*50)
             ind = Individual(encoding)
             
-            # 尝试推断类别数
             num_classes = 10
             if state_dict:
                 if 'fc.weight' in state_dict:

@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+"""
+Evaluation utilities for NTK scoring and full training.
+"""
 import torch
 import torch.nn as nn
 import numpy as np
@@ -9,7 +13,7 @@ from typing import Tuple, List
 from configuration.config import config
 from core.encoding import Individual, Encoder
 from models.network import NetworkBuilder
-from utils.logger import logger, failed_logger
+from utils.logger import logger
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer
 
@@ -21,14 +25,16 @@ def clear_gpu_memory():
 
 
 class NTKEvaluator:
-    def __init__(self,
-                 input_size: Tuple[int, int, int] = None,
-                 num_classes: int = None,
-                 batch_size: int = None,
-                 device: str = None,
-                 recalbn: int = 0,
-                 num_batch: int = 1,
-                 dataset: str = None):
+    def __init__(
+        self,
+        input_size: Tuple[int, int, int] = None,
+        num_classes: int = None,
+        batch_size: int = None,
+        device: str = None,
+        recalbn: int = 0,
+        num_batch: int = 1,
+        dataset: str = None,
+    ):
         self.input_size = input_size or config.NTK_INPUT_SIZE
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
@@ -36,26 +42,25 @@ class NTKEvaluator:
         self.param_threshold = config.NTK_PARAM_THRESHOLD
         self.dataset = dataset or config.FINAL_DATASET
 
-        self.recalbn = recalbn        # 重置并重新统计 BN 的 batch 数
-        self.num_batch = num_batch    # 使用多少个 batch 计算 NTK
+        self.recalbn = recalbn
+        self.num_batch = num_batch
 
-        if self.device == 'cuda' and not torch.cuda.is_available():
-            self.device = 'cpu'
+        if self.device == "cuda" and not torch.cuda.is_available():
+            self.device = "cpu"
 
-        # 加载用于 NTK 计算的小数据集 loader
         self.trainloader = DatasetLoader.get_ntk_trainloader(
             batch_size=self.batch_size,
-            dataset_name=self.dataset
+            dataset_name=self.dataset,
         )
 
     def recal_bn(self, network: nn.Module, xloader, recal_batches: int, device):
-        """重置 BN 统计并用若干 batch 重新统计"""
+        """Reset BN stats and recompute over a few batches."""
         for m in network.modules():
             if isinstance(m, torch.nn.BatchNorm2d):
                 m.running_mean.data.fill_(0)
                 m.running_var.data.fill_(0)
                 m.num_batches_tracked.data.zero_()
-                m.momentum = None  # 使用 None 表示使用 batch mean/var
+                m.momentum = None
 
         network.train()
         with torch.no_grad():
@@ -66,14 +71,20 @@ class NTKEvaluator:
                 _ = network(inputs)
         return network
 
-    def compute_ntk_condition_number(self, network: nn.Module, xloader, num_batch: int = -1, train_mode: bool = True) -> float:
-        """严格按照 ntk.py 中的 get_ntk_n 逻辑计算单个网络的 NTK 条件数"""
-        device = self.device if self.device == 'cpu' else 0
+    def compute_ntk_condition_number(
+        self,
+        network: nn.Module,
+        xloader,
+        num_batch: int = -1,
+        train_mode: bool = True,
+    ) -> float:
+        """Compute NTK condition number for a single network."""
+        device = self.device if self.device == "cpu" else 0
         if train_mode:
             network.train()
         else:
             network.eval()
-        
+
         grads = []
 
         for i, (inputs, _) in enumerate(xloader):
@@ -87,12 +98,15 @@ class NTKEvaluator:
                 logit = logit[1]
 
             for idx in range(inputs.size(0)):
-                logit[idx:idx + 1].backward(torch.ones_like(logit[idx:idx + 1]), retain_graph=True)
+                logit[idx:idx + 1].backward(
+                    torch.ones_like(logit[idx:idx + 1]),
+                    retain_graph=True,
+                )
 
                 grad = []
                 for name, p in network.named_parameters():
-                    if 'weight' in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach().clone()) 
+                    if "weight" in name and p.grad is not None:
+                        grad.append(p.grad.view(-1).detach().clone())
                 if grad:
                     grads.append(torch.cat(grad, -1))
 
@@ -102,19 +116,17 @@ class NTKEvaluator:
             return 100000.0
 
         grads_tensor = torch.stack(grads, 0)  # (N, C)
-        ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])
+        ntk = torch.einsum("nc,mc->nm", [grads_tensor, grads_tensor])
 
         try:
-            eigenvalues = torch.linalg.eigvalsh(ntk)  
+            eigenvalues = torch.linalg.eigvalsh(ntk)
         except AttributeError:
-            eigenvalues, _ = torch.symeig(ntk)  
+            eigenvalues, _ = torch.symeig(ntk)
 
-        # 使用绝对值避免负特征值导致的负条件数
         eigenvalues_abs = torch.abs(eigenvalues)
         max_eigen = eigenvalues_abs.max().item()
         min_eigen = eigenvalues_abs.min().item()
-        
-        # 避免除零
+
         if min_eigen < 1e-10:
             cond = 100000.0
         else:
@@ -126,12 +138,13 @@ class NTKEvaluator:
 
         return cond
 
-
     def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
-        """计算 NTK 分数，多次运行取平均"""
+        """Compute NTK score by averaging multiple runs."""
         try:
             if param_count and param_count > self.param_threshold:
-                logger.warning(f"Skipping NTK: params {param_count} > threshold {self.param_threshold}")
+                logger.warning(
+                    f"Skipping NTK: params {param_count} > threshold {self.param_threshold}"
+                )
                 return 100000.0
 
             network = network.to(self.device)
@@ -142,32 +155,31 @@ class NTKEvaluator:
             total_cond = 0.0
             for _ in range(num_runs):
                 cond = self.compute_ntk_condition_number(
-                    network, self.trainloader, 
-                    num_batch=self.num_batch, 
-                    train_mode=True  
+                    network,
+                    self.trainloader,
+                    num_batch=self.num_batch,
+                    train_mode=True,
                 )
                 total_cond += cond
-            
+
             return round(total_cond / num_runs, 3)
 
         except Exception as e:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
             return 100000.0
-        
+
     def evaluate_individual(self, individual: Individual) -> float:
         try:
             network = NetworkBuilder.build_from_individual(
                 individual,
                 input_channels=self.input_size[0],
-                num_classes=self.num_classes
+                num_classes=self.num_classes,
             )
             param_count = network.get_param_count()
             individual.param_count = param_count
 
             score = self.compute_ntk_score(network, param_count)
-
-            # fitness 直接等于 NTK 条件数（越小越好）
             fitness = score
             individual.fitness = fitness
 
@@ -179,108 +191,103 @@ class NTKEvaluator:
 
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
-            individual.fitness = 100000.0  # 极大值表示最差
+            individual.fitness = 100000.0
             clear_gpu_memory()
             return 100000.0
 
 
 class FinalEvaluator:
-    def __init__(self, dataset: str = 'cifar10', device: str = None):
+    def __init__(self, dataset: str = "cifar10", device: str = None):
         self.dataset = dataset
         self.device = device or config.DEVICE
         self.trainer = NetworkTrainer(self.device)
 
-        if dataset == 'cifar10':
+        if dataset == "cifar10":
             self.trainloader, self.testloader = DatasetLoader.get_cifar10()
             self.num_classes = 10
-        elif dataset == 'cifar100':
+        elif dataset == "cifar100":
             self.trainloader, self.testloader = DatasetLoader.get_cifar100()
             self.num_classes = 100
-        elif dataset == 'imagenet':
+        elif dataset == "imagenet":
             self.trainloader, self.testloader = DatasetLoader.get_imagenet()
             self.num_classes = config.IMAGENET_NUM_CLASSES
         else:
             raise ValueError(f"Unknown dataset: {dataset}")
 
-    def plot_training_history(self, history: list, individual_id: int, epochs: int, 
-                               best_acc: float, param_count: int, save_dir: str):
-        """
-        绘制并保存训练曲线图
-        
-        Args:
-            history: 训练历史记录列表
-            individual_id: 个体ID
-            epochs: 训练轮数
-            best_acc: 最佳准确率
-            param_count: 模型参数量
-            save_dir: 保存目录
-        """
+    def plot_training_history(
+        self,
+        history: list,
+        individual_id: int,
+        epochs: int,
+        best_acc: float,
+        param_count: int,
+        save_dir: str,
+    ):
+        """Plot and save training curves."""
         if not history:
             return
-        
-        # 提取数据
-        epoch_list = [h['epoch'] for h in history]
-        train_loss = [h['train_loss'] for h in history]
-        test_loss = [h['test_loss'] for h in history]
-        train_acc = [h['train_acc'] for h in history]
-        test_acc = [h['test_acc'] for h in history]
-        lr_list = [h['lr'] for h in history]
-        
-        # 创建图表
+
+        epoch_list = [h["epoch"] for h in history]
+        train_loss = [h["train_loss"] for h in history]
+        test_loss = [h["test_loss"] for h in history]
+        train_acc = [h["train_acc"] for h in history]
+        test_acc = [h["test_acc"] for h in history]
+        lr_list = [h["lr"] for h in history]
+
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        fig.suptitle(f'Training History - Model {individual_id}\n'
-                     f'Params: {param_count:,} | Best Test Acc: {best_acc:.2f}% | Epochs: {epochs}', 
-                     fontsize=14, fontweight='bold')
-        
-        # 1. Loss 曲线
+        fig.suptitle(
+            f"Training History - Model {individual_id}\n"
+            f"Params: {param_count:,} | Best Test Acc: {best_acc:.2f}% | Epochs: {epochs}",
+            fontsize=14,
+            fontweight="bold",
+        )
+
         ax1 = axes[0, 0]
-        ax1.plot(epoch_list, train_loss, 'b-', label='Train Loss', linewidth=1.5)
-        ax1.plot(epoch_list, test_loss, 'r-', label='Test Loss', linewidth=1.5)
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Loss')
-        ax1.set_title('Loss Curves')
-        ax1.legend(loc='upper right')
-        ax1.grid(True, linestyle='--', alpha=0.5)
-        
-        # 2. Accuracy 曲线
+        ax1.plot(epoch_list, train_loss, "b-", label="Train Loss", linewidth=1.5)
+        ax1.plot(epoch_list, test_loss, "r-", label="Test Loss", linewidth=1.5)
+        ax1.set_xlabel("Epoch")
+        ax1.set_ylabel("Loss")
+        ax1.set_title("Loss Curves")
+        ax1.legend(loc="upper right")
+        ax1.grid(True, linestyle="--", alpha=0.5)
+
         ax2 = axes[0, 1]
-        ax2.plot(epoch_list, train_acc, 'b-', label='Train Acc', linewidth=1.5)
-        ax2.plot(epoch_list, test_acc, 'r-', label='Test Acc', linewidth=1.5)
-        ax2.axhline(y=best_acc, color='g', linestyle='--', alpha=0.7, label=f'Best: {best_acc:.2f}%')
-        ax2.set_xlabel('Epoch')
-        ax2.set_ylabel('Accuracy (%)')
-        ax2.set_title('Accuracy Curves')
-        ax2.legend(loc='lower right')
-        ax2.grid(True, linestyle='--', alpha=0.5)
-        
-        # 3. Train/Test Acc 差距（过拟合指标）
+        ax2.plot(epoch_list, train_acc, "b-", label="Train Acc", linewidth=1.5)
+        ax2.plot(epoch_list, test_acc, "r-", label="Test Acc", linewidth=1.5)
+        ax2.axhline(
+            y=best_acc, color="g", linestyle="--", alpha=0.7, label=f"Best: {best_acc:.2f}%"
+        )
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Accuracy (%)")
+        ax2.set_title("Accuracy Curves")
+        ax2.legend(loc="lower right")
+        ax2.grid(True, linestyle="--", alpha=0.5)
+
         ax3 = axes[1, 0]
         gap = [train_acc[i] - test_acc[i] for i in range(len(train_acc))]
-        ax3.plot(epoch_list, gap, 'purple', linewidth=1.5)
-        ax3.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
-        ax3.fill_between(epoch_list, 0, gap, alpha=0.3, color='purple')
-        ax3.set_xlabel('Epoch')
-        ax3.set_ylabel('Train Acc - Test Acc (%)')
-        ax3.set_title('Generalization Gap (Overfitting Indicator)')
-        ax3.grid(True, linestyle='--', alpha=0.5)
-        
-        # 4. 学习率曲线
+        ax3.plot(epoch_list, gap, "purple", linewidth=1.5)
+        ax3.axhline(y=0, color="gray", linestyle="-", alpha=0.5)
+        ax3.fill_between(epoch_list, 0, gap, alpha=0.3, color="purple")
+        ax3.set_xlabel("Epoch")
+        ax3.set_ylabel("Train Acc - Test Acc (%)")
+        ax3.set_title("Generalization Gap")
+        ax3.grid(True, linestyle="--", alpha=0.5)
+
         ax4 = axes[1, 1]
-        ax4.plot(epoch_list, lr_list, 'green', linewidth=1.5)
-        ax4.set_xlabel('Epoch')
-        ax4.set_ylabel('Learning Rate')
-        ax4.set_title('Learning Rate Schedule')
-        ax4.grid(True, linestyle='--', alpha=0.5)
-        ax4.set_yscale('log')
-        
+        ax4.plot(epoch_list, lr_list, "green", linewidth=1.5)
+        ax4.set_xlabel("Epoch")
+        ax4.set_ylabel("Learning Rate")
+        ax4.set_title("Learning Rate Schedule")
+        ax4.grid(True, linestyle="--", alpha=0.5)
+        ax4.set_yscale("log")
+
         plt.tight_layout()
-        
-        # 保存图表
+
         os.makedirs(save_dir, exist_ok=True)
-        plot_path = os.path.join(save_dir, f'training_curve_model_{individual_id}.png')
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plot_path = os.path.join(save_dir, f"training_curve_model_{individual_id}.png")
+        plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
-        
+
         logger.info(f"Training curve saved to {plot_path}")
         return plot_path
 
@@ -301,24 +308,22 @@ class FinalEvaluator:
         )
         train_time = time.time() - start_time
 
-        # 保存模型
-        save_dir = os.path.join(config.CHECKPOINT_DIR, 'final_models')
+        save_dir = os.path.join(config.CHECKPOINT_DIR, "final_models")
         os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f'model_{individual.id}_acc{best_acc:.2f}.pth')
+        save_path = os.path.join(save_dir, f"model_{individual.id}_acc{best_acc:.2f}.pth")
 
         save_dict = {
-            'state_dict': network.state_dict(),
-            'encoding': individual.encoding,
-            'accuracy': best_acc,
-            'param_count': param_count,
-            'history': history
+            "state_dict": network.state_dict(),
+            "encoding": individual.encoding,
+            "accuracy": best_acc,
+            "param_count": param_count,
+            "history": history,
         }
         torch.save(save_dict, save_path)
         logger.info(f"Saved model to {save_path}")
         logger.info(f"Model {individual.id} Architecture Encoding: {individual.encoding}")
-        
-        # 生成并保存训练曲线图到 logs 目录
-        plot_dir = os.path.join(config.LOG_DIR, 'training_curves')
+
+        plot_dir = os.path.join(config.LOG_DIR, "training_curves")
         try:
             plot_path = self.plot_training_history(
                 history=history,
@@ -326,32 +331,40 @@ class FinalEvaluator:
                 epochs=epochs,
                 best_acc=best_acc,
                 param_count=param_count,
-                save_dir=plot_dir
+                save_dir=plot_dir,
             )
         except Exception as e:
             logger.warning(f"Failed to generate training curve plot: {e}")
             plot_path = None
 
         result = {
-            'individual_id': individual.id,
-            'param_count': param_count,
-            'best_accuracy': best_acc,
-            'train_time': train_time,
-            'history': history,
-            'encoding': individual.encoding,
-            'model_path': save_path,
-            'plot_path': plot_path
+            "individual_id": individual.id,
+            "param_count": param_count,
+            "best_accuracy": best_acc,
+            "train_time": train_time,
+            "history": history,
+            "encoding": individual.encoding,
+            "model_path": save_path,
+            "plot_path": plot_path,
         }
         return best_acc, result
 
-    def evaluate_top_individuals(self, population: List[Individual],
-                                top_k: int = None, epochs: int = None) -> Tuple[Individual, List[dict]]:
+    def evaluate_top_individuals(
+        self,
+        population: List[Individual],
+        top_k: int = None,
+        epochs: int = None,
+    ) -> Tuple[Individual, List[dict]]:
         if top_k is None:
             top_k = config.HISTORY_TOP_N2
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
 
-        sorted_pop = sorted(population, key=lambda x: x.fitness if x.fitness is not None else float('inf'), reverse=False)
+        sorted_pop = sorted(
+            population,
+            key=lambda x: x.fitness if x.fitness is not None else float("inf"),
+            reverse=False,
+        )
         top_individuals = sorted_pop[:top_k]
 
         results = []
@@ -372,22 +385,21 @@ class FinalEvaluator:
 
 class FitnessEvaluator:
     def __init__(self):
-        # 延迟初始化，避免模块导入时就加载数据集
         self._ntk_evaluator = None
 
     @property
     def ntk_evaluator(self):
-        """延迟加载 NTKEvaluator，使用当前 config 配置"""
+        """Lazy-init NTKEvaluator with current config."""
         if self._ntk_evaluator is None:
             self._ntk_evaluator = NTKEvaluator(dataset=config.FINAL_DATASET)
         return self._ntk_evaluator
 
     def reset(self):
-        """重置评估器，用于切换数据集后重新初始化"""
+        """Reset evaluator state after dataset changes."""
         self._ntk_evaluator = None
 
     def evaluate_individual(self, individual: Individual) -> float:
-        """评估单个个体的 NTK Fitness"""
+        """Evaluate NTK fitness for a single individual."""
         return self.ntk_evaluator.evaluate_individual(individual)
 
     def evaluate_population_ntk(self, population: List[Individual], show_progress: bool = True):
@@ -398,7 +410,6 @@ class FitnessEvaluator:
             if show_progress:
                 print(f"\r[NTK Eval] {idx+1}/{total}", end="", flush=True)
             self.ntk_evaluator.evaluate_individual(ind)
-            # param_count is calculated inside ntk_evaluator.evaluate_individual
 
             if (idx + 1) % 5 == 0:
                 clear_gpu_memory()
@@ -408,5 +419,4 @@ class FitnessEvaluator:
         clear_gpu_memory()
 
 
-# 全局实例
 fitness_evaluator = FitnessEvaluator()

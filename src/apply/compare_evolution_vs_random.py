@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-比较老化进化算法 (Aging Evolution) 和随机搜索 (Random Search) 的性能差异
-
-实验设计：
-1. 两种算法使用相同的评估次数（NTK评估）
-2. 记录每步的最佳NTK值变化曲线
-3. 统计最终结果并绘制对比图
+Compare aging evolution vs random search.
 """
+
 
 import os
 import sys
@@ -20,7 +16,6 @@ from collections import deque
 from copy import deepcopy
 from typing import List, Tuple
 
-# 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from configuration.config import config
@@ -32,41 +27,28 @@ from utils.logger import logger
 
 
 class RandomSearch:
-    """随机搜索算法"""
     
     def __init__(self, max_evaluations: int):
         self.max_evaluations = max_evaluations
         self.history: List[Individual] = []
-        self.best_fitness_curve: List[float] = []  # 记录每步的累积最佳fitness
-        self.all_fitness_values: List[float] = []  # 记录每个个体的NTK值
+        self.best_fitness_curve: List[float] = []
+        self.all_fitness_values: List[float] = []
         
     def run(self) -> Tuple[List[Individual], List[float], List[float]]:
-        """
-        运行随机搜索
-        
-        Returns:
-            history: 所有评估过的个体
-            best_fitness_curve: 每步的累积最佳fitness
-            all_fitness_values: 每个个体的NTK值
-        """
         logger.info(f"Starting Random Search for {self.max_evaluations} evaluations...")
         
         best_fitness = float('inf')
         
         for i in range(self.max_evaluations):
-            # 随机生成一个有效个体
             ind = population_initializer.create_valid_individual()
             ind.id = i
             
-            # 评估NTK
             fitness_evaluator.evaluate_individual(ind)
             self.history.append(ind)
             
-            # 记录当前个体的NTK值
             current_fitness = ind.fitness if ind.fitness is not None else 100000
             self.all_fitness_values.append(current_fitness)
             
-            # 更新最佳fitness（越小越好）
             if ind.fitness is not None and ind.fitness < 100000:
                 best_fitness = min(best_fitness, ind.fitness)
             
@@ -81,7 +63,6 @@ class RandomSearch:
 
 
 class AgingEvolutionSearch:
-    """老化进化算法（简化版，用于对比实验）"""
     
     def __init__(self, max_evaluations: int, population_size: int = None):
         self.max_evaluations = max_evaluations
@@ -89,10 +70,9 @@ class AgingEvolutionSearch:
         self.population = deque()
         self.history: List[Individual] = []
         self.best_fitness_curve: List[float] = []
-        self.all_fitness_values: List[float] = []  # 记录每个个体的NTK值
+        self.all_fitness_values: List[float] = []
         
     def _select_parents(self) -> Tuple[Individual, Individual]:
-        """锦标赛选择"""
         current_pop_list = list(self.population)
         parents = selection_operator.tournament_selection(
             current_pop_list,
@@ -104,23 +84,18 @@ class AgingEvolutionSearch:
         return parents[0], parents[1]
     
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        """生成后代"""
         child = None
         
-        # 交叉
         if random.random() < config.PROB_CROSSOVER:
             c1, c2, _ = crossover_operator.crossover(parent1, parent2)
             child = random.choice([c1, c2])
         else:
             child = random.choice([parent1, parent2]).copy()
         
-        # 变异
         if random.random() < config.PROB_MUTATION:
             child = mutation_operator.mutate(child)
         
-        # 验证
         if not Encoder.validate_encoding(child.encoding):
-            # 修复：重新变异父代
             for _ in range(20):
                 child = mutation_operator.mutate(random.choice([parent1, parent2]))
                 if Encoder.validate_encoding(child.encoding):
@@ -131,21 +106,12 @@ class AgingEvolutionSearch:
         return child
     
     def run(self) -> Tuple[List[Individual], List[float], List[float]]:
-        """
-        运行老化进化搜索
-        
-        Returns:
-            history: 所有评估过的个体
-            best_fitness_curve: 每步的累积最佳fitness
-            all_fitness_values: 每个个体的NTK值
-        """
         logger.info(f"Starting Aging Evolution for {self.max_evaluations} evaluations...")
         logger.info(f"Population size: {self.population_size}")
         
         best_fitness = float('inf')
         eval_count = 0
         
-        # 1. 初始化种群
         logger.info("Initializing population...")
         while len(self.population) < self.population_size and eval_count < self.max_evaluations:
             ind = population_initializer.create_valid_individual()
@@ -155,7 +121,6 @@ class AgingEvolutionSearch:
             self.population.append(ind)
             self.history.append(ind)
             
-            # 记录当前个体的NTK值
             current_fitness = ind.fitness if ind.fitness is not None else 100000
             self.all_fitness_values.append(current_fitness)
             
@@ -170,28 +135,21 @@ class AgingEvolutionSearch:
         
         logger.info(f"Population initialized. Size: {len(self.population)}")
         
-        # 2. 进化循环
         while eval_count < self.max_evaluations:
-            # 选择父代
             parent1, parent2 = self._select_parents()
             
-            # 生成后代
             child = self._generate_offspring(parent1, parent2)
             child.id = eval_count
             
-            # 评估
             fitness_evaluator.evaluate_individual(child)
             
-            # 更新种群（移除最老的，添加新的）
             self.population.popleft()
             self.population.append(child)
             self.history.append(child)
             
-            # 记录当前个体的NTK值
             current_fitness = child.fitness if child.fitness is not None else 100000
             self.all_fitness_values.append(current_fitness)
             
-            # 更新最佳fitness
             if child.fitness is not None and child.fitness < 100000:
                 best_fitness = min(best_fitness, child.fitness)
             
@@ -209,17 +167,6 @@ class AgingEvolutionSearch:
 def plot_comparison(evolution_curve: List[float], random_curve: List[float], 
                     evolution_all_ntk: List[float], random_all_ntk: List[float],
                     output_path: str, title: str = None):
-    """
-    绘制对比图
-    
-    Args:
-        evolution_curve: 老化进化的累积最佳NTK曲线
-        random_curve: 随机搜索的累积最佳NTK曲线
-        evolution_all_ntk: 老化进化搜索的每个个体NTK值
-        random_all_ntk: 随机搜索的每个个体NTK值
-        output_path: 输出路径
-        title: 图表标题
-    """
     fig, axes = plt.subplots(4, 2, figsize=(14, 20))
     
     if title is None:
@@ -228,11 +175,9 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     
     steps = list(range(1, len(evolution_curve) + 1))
     
-    # 过滤有效值（用于后续图表）
     evo_valid_vals = [v for v in evolution_all_ntk if v < 100000]
     rand_valid_vals = [v for v in random_all_ntk if v < 100000]
     
-    # 1. 累积最佳NTK曲线对比（使用对数坐标，更清晰地显示差异）
     ax1 = axes[0, 0]
     ax1.semilogy(steps, evolution_curve, 'b-', linewidth=2, label='Aging Evolution')
     ax1.semilogy(steps, random_curve, 'r-', linewidth=2, label='Random Search')
@@ -241,13 +186,11 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax1.set_title('1. Cumulative Best NTK (Lower is Better)')
     ax1.legend()
     ax1.grid(True, alpha=0.3, which='both')
-    # 添加最终值标注
     ax1.annotate(f'{evolution_curve[-1]:.1f}', xy=(len(steps), evolution_curve[-1]), 
                  xytext=(5, 0), textcoords='offset points', fontsize=9, color='blue')
     ax1.annotate(f'{random_curve[-1]:.1f}', xy=(len(steps), random_curve[-1]), 
                  xytext=(5, 0), textcoords='offset points', fontsize=9, color='red')
     
-    # 2. 每个个体NTK值散点图对比（使用对数坐标）
     ax2 = axes[0, 1]
     evo_valid = [(i+1, v) for i, v in enumerate(evolution_all_ntk) if v < 100000]
     rand_valid = [(i+1, v) for i, v in enumerate(random_all_ntk) if v < 100000]
@@ -264,7 +207,6 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax2.legend()
     ax2.grid(True, alpha=0.3, which='both')
     
-    # 3. 双Y轴：分别显示两种算法的累积最佳曲线（解决尺度差异问题）
     ax3 = axes[1, 0]
     color1, color2 = 'blue', 'red'
     
@@ -284,11 +226,9 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax3.legend([line1, line2], ['Aging Evolution', 'Random Search'], loc='upper right')
     ax3.grid(True, alpha=0.3)
     
-    # 4. NTK分布直方图对比（使用对数bin）
     ax4 = axes[1, 1]
     all_valid = evo_valid_vals + rand_valid_vals
     if all_valid:
-        # 使用对数分bin，更好地展示分布
         log_min = np.log10(max(min(all_valid), 1))
         log_max = np.log10(max(all_valid))
         bins = np.logspace(log_min, log_max, 25)
@@ -301,7 +241,6 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax4.legend()
     ax4.grid(True, alpha=0.3)
     
-    # 5. 相对改进比例（基于各自初始值的百分比改进）
     ax5 = axes[2, 0]
     evo_improvement = [(evolution_curve[0] - v) / evolution_curve[0] * 100 for v in evolution_curve]
     rand_improvement = [(random_curve[0] - v) / random_curve[0] * 100 for v in random_curve]
@@ -312,32 +251,23 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax5.set_title('5. Relative Improvement Over Time')
     ax5.legend()
     ax5.grid(True, alpha=0.3)
-    # 添加最终改进值
     ax5.annotate(f'{evo_improvement[-1]:.1f}%', xy=(len(steps), evo_improvement[-1]), 
                  xytext=(5, 0), textcoords='offset points', fontsize=9, color='blue')
     ax5.annotate(f'{rand_improvement[-1]:.1f}%', xy=(len(steps), rand_improvement[-1]), 
                  xytext=(5, 5), textcoords='offset points', fontsize=9, color='red')
     
-    # 6. 滑动窗口平均NTK对比（修复不连续问题）
     ax6 = axes[2, 1]
     window_size = max(5, len(evolution_all_ntk) // 20)
     
     def moving_average_continuous(data, window):
-        """
-        计算滑动窗口平均，使用插值填充无效值以保证连续性
-        """
-        # 先将无效值替换为 NaN
         cleaned = np.array([v if v < 100000 else np.nan for v in data], dtype=float)
         
-        # 使用插值填充 NaN（线性插值）
         valid_mask = ~np.isnan(cleaned)
         if np.sum(valid_mask) >= 2:
             indices = np.arange(len(cleaned))
             cleaned = np.interp(indices, indices[valid_mask], cleaned[valid_mask])
         
-        # 计算滑动平均
         result = np.convolve(cleaned, np.ones(window)/window, mode='valid')
-        # 补充前面的值使长度一致
         padding = [np.mean(cleaned[:i+1]) for i in range(window-1)]
         return padding + list(result)
     
@@ -352,13 +282,10 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax6.legend()
     ax6.grid(True, alpha=0.3, which='both')
     
-    # 7. 简单折线图：每个个体的NTK按时间顺序连线（对数坐标）
     ax7 = axes[3, 0]
-    # 使用插值处理无效值
     evo_line = np.array([v if v < 100000 else np.nan for v in evolution_all_ntk], dtype=float)
     rand_line = np.array([v if v < 100000 else np.nan for v in random_all_ntk], dtype=float)
     
-    # 插值填充 NaN
     for arr in [evo_line, rand_line]:
         valid_mask = ~np.isnan(arr)
         if np.sum(valid_mask) >= 2:
@@ -373,11 +300,9 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     ax7.legend()
     ax7.grid(True, alpha=0.3, which='both')
     
-    # 8. 统计摘要表格
     ax8 = axes[3, 1]
     ax8.axis('off')
     
-    # 计算统计数据
     evo_valid = [v for v in evolution_all_ntk if v < 100000]
     rand_valid = [v for v in random_all_ntk if v < 100000]
     
@@ -402,7 +327,6 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     table.set_fontsize(10)
     table.scale(1.2, 1.8)
     
-    # 设置表头样式
     for i in range(3):
         table[(0, i)].set_facecolor('#4472C4')
         table[(0, i)].set_text_props(color='white', fontweight='bold')
@@ -418,10 +342,6 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
 
 def compute_statistics(evolution_history: List[Individual], random_history: List[Individual],
                        evolution_curve: List[float], random_curve: List[float]) -> dict:
-    """
-    计算统计指标
-    """
-    # 提取有效的fitness值
     evo_fitnesses = [ind.fitness for ind in evolution_history 
                      if ind.fitness is not None and ind.fitness < 100000]
     rand_fitnesses = [ind.fitness for ind in random_history 
@@ -447,17 +367,14 @@ def compute_statistics(evolution_history: List[Individual], random_history: List
         'comparison': {}
     }
     
-    # 比较指标
     if stats['evolution']['best_ntk'] and stats['random']['best_ntk']:
         improvement = ((stats['random']['best_ntk'] - stats['evolution']['best_ntk']) 
                        / stats['random']['best_ntk'] * 100)
         stats['comparison']['best_ntk_improvement_%'] = round(float(improvement), 2)
         stats['comparison']['evolution_better'] = bool(stats['evolution']['best_ntk'] < stats['random']['best_ntk'])
     
-    # 计算收敛速度（达到某个阈值所需的评估次数）
     if evolution_curve and random_curve:
-        # 以随机搜索最终值为阈值
-        threshold = random_curve[-1] * 1.05  # 略高于随机搜索最终值
+        threshold = random_curve[-1] * 1.05
         
         evo_converge_step = None
         for i, v in enumerate(evolution_curve):
@@ -465,7 +382,7 @@ def compute_statistics(evolution_history: List[Individual], random_history: List
                 evo_converge_step = i + 1
                 break
         
-        rand_converge_step = len(random_curve)  # 随机搜索到最后才达到
+        rand_converge_step = len(random_curve)
         
         stats['comparison']['threshold'] = float(threshold)
         stats['comparison']['evolution_steps_to_threshold'] = evo_converge_step
@@ -480,9 +397,6 @@ def compute_statistics(evolution_history: List[Individual], random_history: List
 
 def run_experiment(max_evaluations: int, population_size: int, seed: int = None, 
                    output_dir: str = None):
-    """
-    运行对比实验
-    """
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -498,7 +412,6 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
     logger.info(f"Max evaluations: {max_evaluations}")
     logger.info(f"Population size (for Evolution): {population_size}")
     
-    # 1. 运行老化进化算法
     logger.info("\n" + "=" * 40)
     logger.info("Phase 1: Running Aging Evolution")
     logger.info("=" * 40)
@@ -510,7 +423,6 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
     
     clear_gpu_memory()
     
-    # 2. 运行随机搜索
     logger.info("\n" + "=" * 40)
     logger.info("Phase 2: Running Random Search")
     logger.info("=" * 40)
@@ -522,7 +434,6 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
     
     clear_gpu_memory()
     
-    # 3. 计算统计指标
     logger.info("\n" + "=" * 40)
     logger.info("Phase 3: Computing Statistics")
     logger.info("=" * 40)
@@ -537,7 +448,6 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
         'seed': seed,
     }
     
-    # 打印结果
     logger.info("\n" + "=" * 60)
     logger.info("EXPERIMENT RESULTS")
     logger.info("=" * 60)
@@ -556,16 +466,13 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
     
     logger.info("=" * 60)
     
-    # 4. 保存结果
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     
-    # 保存统计数据
     stats_path = os.path.join(output_dir, f'comparison_stats_{timestamp}.json')
     with open(stats_path, 'w', encoding='utf-8') as f:
         json.dump(stats, f, indent=2, ensure_ascii=False)
     logger.info(f"Statistics saved to {stats_path}")
     
-    # 保存曲线数据
     curves_data = {
         'evolution_curve': evolution_curve,
         'random_curve': random_curve,
@@ -577,7 +484,6 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
         json.dump(curves_data, f, indent=2)
     logger.info(f"Curves data saved to {curves_path}")
     
-    # 5. 绘制对比图
     plot_path = os.path.join(output_dir, f'comparison_plot_{timestamp}.png')
     plot_comparison(evolution_curve, random_curve, evolution_all_ntk, random_all_ntk, plot_path)
     

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-可视化交叉/变异操作统计
-读取 logs/op_history.jsonl ，生成操作频次柱状图
+Plot operation history counts from JSONL logs.
 """
+
 import json
 import os
 import argparse

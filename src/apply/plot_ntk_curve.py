@@ -1,16 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-从checkpoint或JSON文件绘制NTK曲线
-
-用法:
-    python src/apply/plot_ntk_curve.py --checkpoint checkpoints/checkpoint_step100.pkl
-    python src/apply/plot_ntk_curve.py --json logs/ntk_history.json
-    python src/apply/plot_ntk_curve.py --checkpoint checkpoints/checkpoint_step100.pkl --output ntk_analysis.png
+Plot NTK history curves from logs or checkpoints.
 """
+
 import os
 import sys
 
-# 添加项目路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
@@ -21,15 +16,12 @@ import numpy as np
 from scipy import stats
 
 def load_ntk_history_from_checkpoint(checkpoint_path):
-    """从checkpoint文件加载NTK历史"""
     with open(checkpoint_path, 'rb') as f:
         checkpoint = pickle.load(f)
     
-    # 新版checkpoint包含ntk_history
     if 'ntk_history' in checkpoint:
         return checkpoint['ntk_history']
     
-    # 旧版checkpoint需要从history中提取
     history = checkpoint.get('history', [])
     ntk_history = []
     for i, ind in enumerate(history):
@@ -39,7 +31,6 @@ def load_ntk_history_from_checkpoint(checkpoint_path):
     return ntk_history
 
 def load_ntk_history_from_json(json_path):
-    """从JSON文件加载NTK历史"""
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
@@ -55,20 +46,16 @@ def load_ntk_history_from_json(json_path):
     return ntk_history
 
 def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
-    """
-    绘制搜索过程中NTK值的变化曲线
-    """
     if not ntk_history:
         print("No NTK history to plot!")
         return
     
-    # 提取有效数据
     steps = []
     ntk_values = []
     individual_ids = []
     
     for step, ind_id, ntk, encoding in ntk_history:
-        if ntk is not None and ntk < 100000:  # 排除无效值
+        if ntk is not None and ntk < 100000:
             steps.append(step)
             ntk_values.append(ntk)
             individual_ids.append(ind_id)
@@ -77,11 +64,9 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
         print("No valid NTK values to plot!")
         return
     
-    # 创建图形 - 2x3布局
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle(f'{title_prefix}NTK Analysis During Search', fontsize=14, fontweight='bold')
     
-    # 1. 所有个体的NTK散点图（按个体ID）
     ax1 = axes[0, 0]
     scatter = ax1.scatter(individual_ids, ntk_values, alpha=0.4, s=15, c=steps, cmap='viridis')
     plt.colorbar(scatter, ax=ax1, label='Step')
@@ -90,7 +75,6 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     ax1.set_title('All Individuals NTK (colored by step)')
     ax1.grid(True, alpha=0.3)
     
-    # 2. 按Step的NTK散点图
     ax2 = axes[0, 1]
     ax2.scatter(steps, ntk_values, alpha=0.3, s=10, c='blue')
     ax2.set_xlabel('Step')
@@ -98,7 +82,6 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     ax2.set_title('NTK vs Step')
     ax2.grid(True, alpha=0.3)
     
-    # 3. 滑动窗口平均NTK曲线
     ax3 = axes[0, 2]
     window_size = max(10, len(ntk_values) // 50)
     if len(ntk_values) >= window_size:
@@ -124,7 +107,6 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     ax3.set_title('NTK with Moving Average')
     ax3.grid(True, alpha=0.3)
     
-    # 4. 累积最佳NTK曲线
     ax4 = axes[1, 0]
     cumulative_best = []
     current_best = float('inf')
@@ -140,11 +122,9 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     ax4.legend()
     ax4.grid(True, alpha=0.3)
     
-    # 5. NTK分布直方图
     ax5 = axes[1, 1]
     n, bins, patches = ax5.hist(ntk_values, bins=50, alpha=0.7, color='blue', edgecolor='black', density=True)
     
-    # 拟合正态分布
     mu, sigma = np.mean(ntk_values), np.std(ntk_values)
     x = np.linspace(min(ntk_values), max(ntk_values), 100)
     ax5.plot(x, stats.norm.pdf(x, mu, sigma), 'r-', linewidth=2, label=f'Normal fit\nμ={mu:.2f}, σ={sigma:.2f}')
@@ -156,7 +136,6 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     ax5.legend(fontsize=8)
     ax5.grid(True, alpha=0.3)
     
-    # 6. Top-K分析
     ax6 = axes[1, 2]
     sorted_ntk = sorted(zip(ntk_values, individual_ids))
     top_k_values = [5, 10, 20, 50, 100]
@@ -193,7 +172,6 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     
     print(f"NTK curve saved to {output_path}")
     
-    # 打印详细统计信息
     print("\n" + "="*60)
     print("NTK Statistics Summary")
     print("="*60)
@@ -204,12 +182,10 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     print(f"Std NTK:           {np.std(ntk_values):.4f}")
     print(f"Worst NTK:         {max(ntk_values):.4f}")
     
-    # Top-10 最佳个体
     print("\n" + "-"*60)
     print("Top 10 Best Individuals:")
     print("-"*60)
     for i, (ntk, ind_id) in enumerate(sorted_ntk[:10]):
-        # 找到对应的encoding
         for step, id_, n, enc in ntk_history:
             if id_ == ind_id and n == ntk:
                 print(f"  {i+1}. ID={ind_id:4d}, NTK={ntk:.4f}, Step={step}")
@@ -226,13 +202,11 @@ def main():
     args = parser.parse_args()
     
     if not args.checkpoint and not args.json:
-        # 默认查找logs/ntk_history.json
         default_json = 'logs/ntk_history.json'
         if os.path.exists(default_json):
             args.json = default_json
             print(f"Using default JSON: {default_json}")
         else:
-            # 查找最新的checkpoint
             checkpoint_dir = 'checkpoints'
             if os.path.exists(checkpoint_dir):
                 files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pkl')]
@@ -248,7 +222,6 @@ def main():
         print("  python src/apply/plot_ntk_curve.py --json logs/ntk_history.json")
         sys.exit(1)
     
-    # 加载数据
     if args.checkpoint:
         print(f"Loading from checkpoint: {args.checkpoint}")
         ntk_history = load_ntk_history_from_checkpoint(args.checkpoint)
@@ -258,7 +231,6 @@ def main():
     
     print(f"Loaded {len(ntk_history)} NTK records")
     
-    # 绘制曲线
     plot_ntk_curve(ntk_history, args.output, args.title)
 
 if __name__ == '__main__':

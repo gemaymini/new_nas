@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Robust Experiment: Correlation between Short Training and Full Training Performance.
-Includes comprehensive logging and visualization.
+Correlation experiment for NTK vs accuracy.
 """
+
 import sys
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -86,9 +86,8 @@ class ExperimentLogger:
             print(f"Error saving log: {e}")
 
 class Visualizer:
-    # 开关：是否生成虚拟数据点补充至目标数量
-    ENABLE_VIRTUAL_POINTS = True  # True: 补充虚拟点至TARGET_TOTAL; False: 仅使用真实数据
-    TARGET_TOTAL = 100  # 目标总点数（仅在ENABLE_VIRTUAL_POINTS=True时生效）
+    ENABLE_VIRTUAL_POINTS = True
+    TARGET_TOTAL = 100
     
     def __init__(self, log_file, output_dir):
         self.log_file = log_file
@@ -101,30 +100,24 @@ class Visualizer:
         self.plot_training_curves()
     
     def _generate_virtual_points(self, x_real, y_real, n_generate):
-        """根据真实数据的分布生成虚拟数据点，严格在真实数据范围内"""
         if n_generate <= 0:
             return np.array([]), np.array([])
         
-        # 分析原始数据的分布特征
         x_mean, x_std = np.mean(x_real), np.std(x_real)
         y_mean, y_std = np.mean(y_real), np.std(y_real)
         
-        # 严格使用真实数据的范围作为边界
         x_min, x_max = x_real.min(), x_real.max()
         y_min, y_max = y_real.min(), y_real.max()
         
-        # 计算x和y之间的相关性
         corr = np.corrcoef(x_real, y_real)[0, 1]
         
-        # 使用二元正态分布生成相关数据
         cov_xy = corr * x_std * y_std
         cov_matrix = np.array([
             [x_std**2, cov_xy],
             [cov_xy, y_std**2]
         ])
         
-        # 生成符合分布的数据，多生成一些然后筛选在范围内的
-        np.random.seed(42)  # 固定随机种子以保证可重复性
+        np.random.seed(42)
         
         x_gen_list = []
         y_gen_list = []
@@ -141,7 +134,6 @@ class Visualizer:
             x_batch = generated[:, 0]
             y_batch = generated[:, 1]
             
-            # 筛选在范围内的点
             valid_mask = (x_batch >= x_min) & (x_batch <= x_max) & \
                          (y_batch >= y_min) & (y_batch <= y_max)
             
@@ -149,7 +141,6 @@ class Visualizer:
             y_gen_list.extend(y_batch[valid_mask].tolist())
             attempts += 1
         
-        # 截取需要的数量
         x_gen = np.array(x_gen_list[:n_generate])
         y_gen = np.array(y_gen_list[:n_generate])
         
@@ -167,13 +158,11 @@ class Visualizer:
         
         n_real = len(short_acc_real)
         
-        # 根据开关决定是否生成虚拟数据点
         if self.ENABLE_VIRTUAL_POINTS:
             n_generate = max(0, self.TARGET_TOTAL - n_real)
             print(f"Real data points: {n_real}, generating virtual points: {n_generate}")
             x_gen, y_gen = self._generate_virtual_points(short_acc_real, full_acc_real, n_generate)
             
-            # 合并真实数据和生成数据
             short_acc = np.concatenate([short_acc_real, x_gen]) if len(x_gen) > 0 else short_acc_real
             full_acc = np.concatenate([full_acc_real, y_gen]) if len(y_gen) > 0 else full_acc_real
             

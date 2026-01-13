@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-重训练模型工具
-读取pth模型文件，仅使用模型结构（不使用权重），重新训练300轮共10次，计算平均性能
+Retrain a saved architecture multiple times and summarize results.
 """
+
 import torch
 import sys
 import os
@@ -11,7 +11,6 @@ import json
 import numpy as np
 from datetime import datetime
 
-# 添加src目录到路径 (apply现在位于src/apply/)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.encoding import Individual, Encoder
@@ -23,15 +22,6 @@ from utils.logger import logger
 
 
 def load_model_encoding(model_path: str) -> list:
-    """
-    从pth文件加载模型编码
-    
-    Args:
-        model_path: 模型文件路径
-        
-    Returns:
-        encoding: 模型编码列表
-    """
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
@@ -45,7 +35,6 @@ def load_model_encoding(model_path: str) -> list:
             encoding = checkpoint['encoding']
             print(f"Found encoding in checkpoint")
             
-            # 打印元数据
             for k, v in checkpoint.items():
                 if k not in ['state_dict', 'encoding', 'history']:
                     print(f"  {k}: {v}")
@@ -58,50 +47,22 @@ def load_model_encoding(model_path: str) -> list:
 
 
 def build_fresh_network(encoding: list, input_channels: int = 3, num_classes: int = 10):
-    """
-    从编码构建全新的网络（随机初始化权重）
-    
-    Args:
-        encoding: 模型编码
-        input_channels: 输入通道数
-        num_classes: 分类数
-        
-    Returns:
-        network: 新构建的网络
-    """
     network = NetworkBuilder.build_from_encoding(encoding, input_channels, num_classes)
     return network
 
 
 def train_once(encoding: list, trainloader, testloader, epochs: int, 
                run_id: int, device: str = None) -> dict:
-    """
-    进行一次完整训练
-    
-    Args:
-        encoding: 模型编码
-        trainloader: 训练数据加载器
-        testloader: 测试数据加载器
-        epochs: 训练轮数
-        run_id: 当前运行编号
-        device: 设备
-        
-    Returns:
-        results: 训练结果字典
-    """
     print(f"\n{'='*60}")
     print(f"Training Run {run_id}")
     print(f"{'='*60}")
     
-    # 构建全新网络（随机初始化）
     network = build_fresh_network(encoding)
     param_count = network.get_param_count()
     print(f"Network parameters: {param_count:,}")
     
-    # 创建训练器
     trainer = NetworkTrainer(device=device)
     
-    # 训练网络
     best_acc, history = trainer.train_network(
         model=network,
         trainloader=trainloader,
@@ -109,7 +70,6 @@ def train_once(encoding: list, trainloader, testloader, epochs: int,
         epochs=epochs
     )
     
-    # 最终评估
     final_train_acc = history[-1]['train_acc']
     final_test_acc = history[-1]['test_acc']
     
@@ -131,21 +91,6 @@ def train_once(encoding: list, trainloader, testloader, epochs: int,
 def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
                   dataset: str = 'cifar10', device: str = None,
                   save_results: bool = True) -> dict:
-    """
-    重训练模型多次并计算平均性能
-    
-    Args:
-        model_path: 模型文件路径
-        epochs: 每次训练的轮数
-        num_runs: 训练次数
-        dataset: 数据集名称
-        device: 设备
-        save_results: 是否保存结果
-        
-    Returns:
-        summary: 汇总结果
-    """
-    # 加载模型编码
     encoding = load_model_encoding(model_path)
     
     print("\n" + "="*60)
@@ -154,7 +99,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
     print(f"Encoding: {encoding}")
     Encoder.print_architecture(encoding)
     
-    # 加载数据集
     print("\n" + "="*60)
     print("Loading Dataset")
     print("="*60)
@@ -167,7 +111,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
     print(f"Dataset: {dataset}")
     print(f"Train batches: {len(trainloader)}, Test batches: {len(testloader)}")
     
-    # 设置设备
     if device is None:
         device = config.DEVICE
     if device == 'cuda' and not torch.cuda.is_available():
@@ -175,7 +118,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         print("Warning: CUDA not available, using CPU")
     print(f"Device: {device}")
     
-    # 进行多次训练（支持中断后保存部分结果）
     all_results = []
     best_accs = []
     final_test_accs = []
@@ -201,7 +143,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         total_time = (end_time - start_time).total_seconds()
         
         runs_completed = len(all_results)
-        # 安全统计
         best_acc_mean = np.mean(best_accs) if best_accs else float('nan')
         best_acc_std = np.std(best_accs) if best_accs else float('nan')
         final_acc_mean = np.mean(final_test_accs) if final_test_accs else float('nan')
@@ -227,7 +168,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
             'all_results': [{k: v for k, v in r.items() if k != 'history'} for r in all_results]
         }
         
-        # 保存结果（强制保存，即使传入了 no-save）
         result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'retrain_results')
         os.makedirs(result_dir, exist_ok=True)
         result_filename = f"retrain_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}_interrupted.json"
@@ -282,7 +222,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
     end_time = datetime.now()
     total_time = (end_time - start_time).total_seconds()
     
-    # 计算统计信息
     print("\n" + "="*60)
     print("Training Summary")
     print("="*60)
@@ -304,7 +243,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
     print(f"Total training time: {total_time/3600:.2f} hours")
     print(f"Average time per run: {total_time/num_runs/60:.2f} minutes")
     
-    # 汇总结果
     summary = {
         'status': 'completed',
         'model_path': model_path,
@@ -325,7 +263,6 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         'all_results': [{k: v for k, v in r.items() if k != 'history'} for r in all_results]
     }
     
-    # 保存结果
     if save_results:
         result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'retrain_results')
         os.makedirs(result_dir, exist_ok=True)

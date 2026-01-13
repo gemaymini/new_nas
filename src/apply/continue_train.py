@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Continue training a model from a .pth checkpoint.
+Continue training from a saved checkpoint.
 """
+
 import argparse
 import os
 import sys

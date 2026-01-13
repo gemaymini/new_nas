@@ -1,19 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-比较三种搜索算法的性能差异：
-1. 三阶段EA (NTK筛选 → 短期训练 → 完整训练)
-2. 传统EA (直接进化 + 完整训练，不使用NTK代理)
-3. 随机搜索 (随机采样 + 完整训练)
-
-实验目标：
-- 比较在相同搜索空间下，三种算法找到的模型在参数量和精度上的帕累托前沿
-- 生成类似论文图3-13的可视化对比图
-
-实验设计：
-- 所有算法使用相同的搜索空间
-- 每种算法选出多个候选模型进行完整训练
-- 最终比较参数量 vs 验证精度的分布
+Compare three search algorithms and plot Pareto fronts.
 """
+
 
 import os
 import sys
@@ -30,7 +19,6 @@ from typing import List, Tuple, Dict, Optional
 from scipy.spatial import ConvexHull
 from datetime import datetime
 
-# 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from configuration.config import config
@@ -41,19 +29,17 @@ from engine.evaluator import fitness_evaluator, FinalEvaluator, clear_gpu_memory
 from models.network import NetworkBuilder
 from utils.logger import logger
 
-# 设置英文字体避免中文乱码
 rcParams['font.family'] = 'DejaVu Sans'
 rcParams['axes.unicode_minus'] = True
 
 
 class ModelInfo:
-    """存储模型信息的数据类"""
     def __init__(self, individual: Individual, param_count: float = 0, 
                  accuracy: float = 0, ntk_score: float = None):
         self.individual = individual
-        self.param_count = param_count  # 参数量（单位：M，百万）
-        self.accuracy = accuracy        # 验证精度（%）
-        self.ntk_score = ntk_score      # NTK条件数
+        self.param_count = param_count
+        self.accuracy = accuracy
+        self.ntk_score = ntk_score
         
     def to_dict(self):
         return {
@@ -66,13 +52,11 @@ class ModelInfo:
 
 
 def count_parameters(model) -> float:
-    """计算模型参数量（单位：M，百万）"""
     total = sum(p.numel() for p in model.parameters())
     return total / 1e6
 
 
 def get_model_param_count(individual: Individual) -> float:
-    """根据个体编码获取模型参数量"""
     try:
         model = NetworkBuilder.build_from_individual(individual)
         return count_parameters(model)
@@ -82,12 +66,6 @@ def get_model_param_count(individual: Individual) -> float:
 
 
 class ThreeStageEA:
-    """
-    三阶段EA算法（用户的算法）
-    阶段1: NTK筛选 - 使用老化进化搜索，以NTK条件数为适应度
-    阶段2: 短期训练筛选 - 对Top N1进行短期训练
-    阶段3: 完整训练 - 对Top N2进行完整训练
-    """
     
     def __init__(self, 
                  max_evaluations: int = 500,
@@ -108,7 +86,6 @@ class ThreeStageEA:
         self.final_models: List[ModelInfo] = []
         
     def _select_parents(self) -> Tuple[Individual, Individual]:
-        """锦标赛选择"""
         current_pop_list = list(self.population)
         parents = selection_operator.tournament_selection(
             current_pop_list,
@@ -120,7 +97,6 @@ class ThreeStageEA:
         return parents[0], parents[1]
     
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        """生成后代"""
         child = None
         
         if random.random() < config.PROB_CROSSOVER:
@@ -143,12 +119,6 @@ class ThreeStageEA:
         return child
     
     def run(self, evaluator: FinalEvaluator = None) -> List[ModelInfo]:
-        """
-        运行三阶段EA搜索
-        
-        Returns:
-            final_models: 完整训练后的模型列表
-        """
         logger.info("=" * 60)
         logger.info("Three-Stage EA Algorithm Started")
         logger.info(f"Config: max_eval={self.max_evaluations}, pop={self.population_size}")
@@ -160,7 +130,6 @@ class ThreeStageEA:
         
         eval_count = 0
         
-        # 初始化种群
         while len(self.population) < self.population_size and eval_count < self.max_evaluations:
             ind = population_initializer.create_valid_individual()
             ind.id = eval_count
@@ -173,7 +142,6 @@ class ThreeStageEA:
                 logger.info(f"  Initialization progress: {eval_count}/{self.population_size}")
                 clear_gpu_memory()
         
-        # 老化进化循环
         while eval_count < self.max_evaluations:
             parent1, parent2 = self._select_parents()
             child = self._generate_offspring(parent1, parent2)
@@ -198,7 +166,6 @@ class ThreeStageEA:
         # ==================== Stage 2: Short Training Screening ====================
         logger.info(f"\n[Stage 2] Short Training Screening (Top {self.top_n1}, {self.short_epochs} epochs)...")
         
-        # 去重并按NTK排序
         unique_history = {}
         for ind in self.history:
             enc_tuple = tuple(ind.encoding)
@@ -258,15 +225,6 @@ class ThreeStageEA:
 
 
 class TraditionalEA:
-    """
-    传统EA算法（经典Aging Evolution）
-    
-    采用经典的老化进化算法：
-    - 搜索阶段：以短期训练（30轮）后的验证精度作为适应度
-    - 选择最优的若干模型进行完整训练
-    
-    与三阶段EA的区别：不使用NTK代理，直接用训练精度指导搜索
-    """
     
     def __init__(self, 
                  max_evaluations: int = 100,
@@ -274,21 +232,19 @@ class TraditionalEA:
                  top_n: int = 10,
                  search_epochs: int = 30,
                  full_epochs: int = 150):
-        self.max_evaluations = max_evaluations  # 搜索阶段评估次数
+        self.max_evaluations = max_evaluations
         self.population_size = population_size
-        self.top_n = top_n  # 最终完整训练的模型数量
-        self.search_epochs = search_epochs  # 搜索阶段训练轮数（适应度评估）
-        self.full_epochs = full_epochs  # 完整训练轮数
+        self.top_n = top_n
+        self.search_epochs = search_epochs
+        self.full_epochs = full_epochs
         
         self.population = deque()
         self.history: List[Individual] = []
         self.final_models: List[ModelInfo] = []
         
     def _select_parents(self) -> Tuple[Individual, Individual]:
-        """锦标赛选择（基于验证精度，精度越高越好）"""
         current_pop_list = list(self.population)
         tournament = random.sample(current_pop_list, min(config.TOURNAMENT_SIZE, len(current_pop_list)))
-        # 按精度降序排列（精度越高越好）
         tournament.sort(key=lambda x: x.fitness if x.fitness is not None else 0, reverse=True)
         
         if len(tournament) < 2:
@@ -296,7 +252,6 @@ class TraditionalEA:
         return tournament[0], tournament[1]
     
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        """生成后代"""
         child = None
         
         if random.random() < config.PROB_CROSSOVER:
@@ -319,9 +274,6 @@ class TraditionalEA:
         return child
     
     def _evaluate_fitness(self, ind: Individual, evaluator: FinalEvaluator) -> float:
-        """
-        评估个体适应度：训练search_epochs轮后的验证精度
-        """
         try:
             acc, _ = evaluator.evaluate_individual(ind, epochs=self.search_epochs)
             return acc
@@ -330,15 +282,6 @@ class TraditionalEA:
             return 0.0
     
     def run(self, evaluator: FinalEvaluator = None) -> List[ModelInfo]:
-        """
-        运行传统EA搜索（经典Aging Evolution）
-        
-        阶段1: 老化进化搜索，以短期训练精度为适应度
-        阶段2: 对Top N模型进行完整训练
-        
-        Returns:
-            final_models: 完整训练后的模型列表
-        """
         logger.info("=" * 60)
         logger.info("Traditional EA (Classic Aging Evolution) Started")
         logger.info(f"Config: max_eval={self.max_evaluations}, pop={self.population_size}")
@@ -361,7 +304,6 @@ class TraditionalEA:
             ind = population_initializer.create_valid_individual()
             ind.id = eval_count
             
-            # 评估适应度（短期训练）
             fitness = self._evaluate_fitness(ind, evaluator)
             ind.fitness = fitness
             
@@ -380,18 +322,14 @@ class TraditionalEA:
         # 1.2 Aging Evolution Loop
         logger.info(f"\n  Starting evolution loop...")
         while eval_count < self.max_evaluations:
-            # 选择父代
             parent1, parent2 = self._select_parents()
             
-            # 生成后代
             child = self._generate_offspring(parent1, parent2)
             child.id = eval_count
             
-            # 评估适应度
             fitness = self._evaluate_fitness(child, evaluator)
             child.fitness = fitness
             
-            # 老化进化核心：移除最老的个体，添加新个体
             self.population.popleft()
             self.population.append(child)
             self.history.append(child)
@@ -408,7 +346,6 @@ class TraditionalEA:
         # ==================== Stage 2: Full Training Top N ====================
         logger.info(f"\n[Stage 2] Full Training Top {self.top_n} Models ({self.full_epochs} epochs)...")
         
-        # 去重并按适应度排序
         unique_history = {}
         for ind in self.history:
             enc_tuple = tuple(ind.encoding)
@@ -419,7 +356,6 @@ class TraditionalEA:
                     unique_history[enc_tuple] = ind
         
         candidates = list(unique_history.values())
-        # 按精度降序排列
         candidates.sort(key=lambda x: x.fitness if x.fitness is not None else 0, reverse=True)
         top_candidates = candidates[:self.top_n]
         
@@ -448,10 +384,6 @@ class TraditionalEA:
 
 
 class RandomSearchAlgorithm:
-    """
-    随机搜索算法
-    随机采样架构并进行完整训练评估
-    """
     
     def __init__(self, 
                  num_samples: int = 10,
@@ -461,12 +393,6 @@ class RandomSearchAlgorithm:
         self.final_models: List[ModelInfo] = []
         
     def run(self, evaluator: FinalEvaluator = None) -> List[ModelInfo]:
-        """
-        运行随机搜索
-        
-        Returns:
-            final_models: 完整训练后的模型列表
-        """
         logger.info("=" * 60)
         logger.info("Random Search Started")
         logger.info(f"Config: num_samples={self.num_samples}, full_epochs={self.full_epochs}")
@@ -505,19 +431,9 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
                            random_models: List[ModelInfo],
                            output_dir: str = None,
                            show_plot: bool = True):
-    """
-    绘制三种算法的帕累托前沿对比图
-    
-    类似论文图3-13：
-    - X轴: 参数量 (M)
-    - Y轴: 验证精度 (%)
-    - 每种算法用不同颜色的点表示
-    - 绘制凸包显示各算法的覆盖范围
-    """
     
     fig, ax = plt.subplots(figsize=(10, 8))
     
-    # 准备数据
     def extract_data(models: List[ModelInfo]):
         params = [m.param_count for m in models if m.param_count > 0 and m.accuracy > 0]
         accs = [m.accuracy for m in models if m.param_count > 0 and m.accuracy > 0]
@@ -527,36 +443,30 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
     te_params, te_accs = extract_data(traditional_models)
     rs_params, rs_accs = extract_data(random_models)
     
-    # 颜色配置
     colors = {
-        'three_stage': '#FF6B6B',     # 红色 - 三阶段EA
-        'traditional': '#98D8AA',      # 绿色 - 传统EA
-        'random': '#6B8EFF'            # 蓝色 - 随机搜索
+        'three_stage': '
+        'traditional': '
+        'random': '
     }
     
     alpha_hull = 0.25
     alpha_scatter = 0.8
     
     def plot_with_hull(params, accs, color, label, marker='o'):
-        """绘制散点图和凸包"""
         if len(params) < 3:
-            # 点太少无法绘制凸包
             ax.scatter(params, accs, c=color, label=label, s=80, 
                       alpha=alpha_scatter, edgecolors='white', linewidths=1, marker=marker)
             return
         
-        # 绘制散点
         ax.scatter(params, accs, c=color, label=label, s=80, 
                   alpha=alpha_scatter, edgecolors='white', linewidths=1, marker=marker)
         
-        # 尝试绘制凸包
         try:
             points = np.column_stack([params, accs])
             hull = ConvexHull(points)
             
-            # 绘制凸包边界和填充
             hull_points = points[hull.vertices]
-            hull_points = np.vstack([hull_points, hull_points[0]])  # 闭合
+            hull_points = np.vstack([hull_points, hull_points[0]])
             
             ax.fill(hull_points[:, 0], hull_points[:, 1], 
                    color=color, alpha=alpha_hull)
@@ -565,7 +475,6 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
         except Exception as e:
             logger.warning(f"Cannot draw convex hull: {e}")
     
-    # 绘制三种算法的结果
     if len(ts_params) > 0:
         plot_with_hull(ts_params, ts_accs, colors['three_stage'], 'Three-Stage EA', 'o')
     if len(te_params) > 0:
@@ -573,14 +482,12 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
     if len(rs_params) > 0:
         plot_with_hull(rs_params, rs_accs, colors['random'], 'Random Search', '^')
     
-    # 设置图表样式
     ax.set_xlabel('Parameters (M)', fontsize=14)
     ax.set_ylabel('Validation Accuracy (%)', fontsize=14)
     ax.set_title('Comparison of Three Search Algorithms', fontsize=14, fontweight='bold')
     ax.legend(loc='lower right', fontsize=12)
     ax.grid(True, alpha=0.3)
     
-    # 添加统计信息
     stats_text = []
     if len(ts_accs) > 0:
         stats_text.append(f"Three-Stage EA: Avg Acc={np.mean(ts_accs):.2f}%, Avg Params={np.mean(ts_params):.2f}M")
@@ -595,7 +502,6 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
     
     plt.tight_layout()
     
-    # 保存图片
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -619,7 +525,6 @@ def save_experiment_results(three_stage_models: List[ModelInfo],
                             random_models: List[ModelInfo],
                             output_dir: str,
                             config_dict: dict = None):
-    """保存实验结果到JSON文件"""
     
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -661,7 +566,6 @@ def save_experiment_results(three_stage_models: List[ModelInfo],
 
 
 def run_experiment(args):
-    """运行完整的对比实验"""
     
     logger.info("=" * 70)
     logger.info("         Three Algorithm Comparison Experiment")
@@ -672,14 +576,12 @@ def run_experiment(args):
     logger.info(f"  - Random Search: samples={args.rs_samples}, full={args.full_epochs}ep")
     logger.info("=" * 70)
     
-    # 创建输出目录
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         'experiment_results'
     )
     os.makedirs(output_dir, exist_ok=True)
     
-    # 创建共享的评估器
     evaluator = FinalEvaluator(dataset=config.FINAL_DATASET)
     
     three_stage_models = []
@@ -729,7 +631,6 @@ def run_experiment(args):
         )
         random_models = random_search.run(evaluator)
     
-    # 保存实验结果
     config_dict = vars(args)
     save_experiment_results(
         three_stage_models,
@@ -739,7 +640,6 @@ def run_experiment(args):
         config_dict
     )
     
-    # 绘制对比图
     plot_pareto_comparison(
         three_stage_models,
         traditional_models,
@@ -779,7 +679,6 @@ def run_experiment(args):
 def main():
     parser = argparse.ArgumentParser(description='三种搜索算法对比实验')
     
-    # 三阶段EA参数
     parser.add_argument('--ts_ntk_evals', type=int, default=1000,
                         help='三阶段EA的NTK评估次数')
     parser.add_argument('--ts_pop_size', type=int, default=50,
@@ -791,7 +690,6 @@ def main():
     parser.add_argument('--ts_short_epochs', type=int, default=30,
                         help='三阶段EA短期训练轮数')
     
-    # 传统EA参数
     parser.add_argument('--te_evals', type=int, default=15,
                         help='传统EA的搜索阶段评估次数')
     parser.add_argument('--te_pop_size', type=int, default=5,
@@ -801,15 +699,12 @@ def main():
     parser.add_argument('--te_search_epochs', type=int, default=30,
                         help='传统EA搜索阶段训练轮数（适应度评估）')
     
-    # 随机搜索参数
     parser.add_argument('--rs_samples', type=int, default=16,
                         help='随机搜索的采样数量')
     
-    # 共享参数
     parser.add_argument('--full_epochs', type=int, default=100,
                         help='完整训练轮数')
     
-    # 控制参数
     parser.add_argument('--skip_three_stage', action='store_true',
                         help='跳过三阶段EA')
     parser.add_argument('--skip_traditional', action='store_true',
@@ -819,13 +714,11 @@ def main():
     parser.add_argument('--no_show', action='store_true',
                         help='不显示图表')
     
-    # 快速测试模式
     parser.add_argument('--quick_test', action='store_true',
                         help='快速测试模式（减少评估次数和训练轮数）')
     
     args = parser.parse_args()
     
-    # 快速测试模式
     if args.quick_test:
         args.ts_ntk_evals = 50
         args.ts_pop_size = 10

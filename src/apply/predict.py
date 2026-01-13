@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-模型推理脚本
-支持 CIFAR-10 和 CIFAR-100
+Run inference from a saved model checkpoint.
 """
+
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
 import sys
 import os
 
-# 添加src目录到路径 (apply现在位于src/apply/)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.encoding import Individual
@@ -41,9 +40,6 @@ CIFAR100_CLASSES = (
 import argparse
 
 def predict_image(model_path: str, image_path: str, encoding_str: str = None, device: str = 'cpu'):
-    """
-    加载模型并对图像进行预测
-    """
     if not os.path.exists(model_path):
         print(f"Error: Model file not found: {model_path}")
         return
@@ -51,7 +47,6 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         print(f"Error: Image file not found: {image_path}")
         return
 
-    # 1. 加载模型 checkpoint
     print(f"Loading model from {model_path}...")
     try:
         checkpoint = torch.load(model_path, map_location=device)
@@ -59,7 +54,6 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         print(f"Error loading model: {e}")
         return
 
-    # 检查checkpoint格式
     encoding = None
     state_dict = None
     
@@ -69,11 +63,9 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         acc = checkpoint.get('accuracy', 'N/A')
         print(f"Model Accuracy on Validation: {acc}")
     elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-        # 兼容只保存了state_dict但没有encoding的情况
         state_dict = checkpoint['state_dict']
         print("Warning: Checkpoint only contains state_dict.")
     elif isinstance(checkpoint, dict) and 'fc.weight' in checkpoint:
-        # 兼容直接保存state_dict的情况
         state_dict = checkpoint
         print("Warning: Checkpoint is a raw state_dict.")
     else:
@@ -83,7 +75,6 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
     if encoding is None:
         if encoding_str:
             try:
-                # 尝试解析用户提供的encoding字符串
                 import ast
                 encoding = ast.literal_eval(encoding_str)
                 print(f"Using provided encoding: {encoding}")
@@ -97,7 +88,6 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
             return
 
 
-    # 2. 自动推断类别数量和类别标签
     num_classes = 10 # Default
     if 'fc.weight' in state_dict:
         num_classes = state_dict['fc.weight'].shape[0]
@@ -117,9 +107,7 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         print(f"Warning: Unknown number of classes {num_classes}. Using numerical labels.")
         classes = [str(i) for i in range(num_classes)]
 
-    # 3. 重建网络架构
     try:
-        # 创建临时Individual对象用于构建网络
         ind = Individual(encoding)
         input_channels = 3
         
@@ -134,9 +122,7 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         print(f"Error building network: {e}")
         return
 
-    # 4. 图像预处理
     try:
-        # CIFAR 标准预处理 (Resize to 32x32)
         transform = transforms.Compose([
             transforms.Resize((32, 32)), 
             transforms.ToTensor(),
@@ -149,7 +135,6 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
         print(f"Error processing image: {e}")
         return
 
-    # 5. 推理
     with torch.no_grad():
         outputs = network(input_tensor)
         probabilities = torch.nn.functional.softmax(outputs, dim=1)
@@ -168,7 +153,6 @@ def predict_image(model_path: str, image_path: str, encoding_str: str = None, de
     print(f"Class: {predicted_class}")
     print(f"Confidence: {confidence:.2%}")
     
-    # 输出前3个可能的类别
     print("\nTop 3 Predictions:")
     top_k = min(3, num_classes)
     top_prob, top_idx = torch.topk(probabilities, top_k)

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-可视化短轮次训练与完整训练性能关系
-优化版：符合 CVPR/ICCV/NeurIPS 顶会审美标准
+Plot short vs full training accuracy correlation.
 """
+
 
 import os
 import sys
@@ -13,17 +13,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
-# --------------------- 1. 全局配置 (顶刊标准) ---------------------
-rcParams['pdf.fonttype'] = 42  # 字体嵌入，防止LaTeX丢失字体
+rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
 rcParams['axes.unicode_minus'] = False
 
-# 字体设置：Times New Roman
 rcParams['font.family'] = 'serif'
 rcParams['font.serif'] = ['Times New Roman']
-rcParams['mathtext.fontset'] = 'stix' # 数学公式字体
+rcParams['mathtext.fontset'] = 'stix'
 
-# 线条与刻度
 rcParams['axes.linewidth'] = 1.2
 rcParams['axes.labelsize'] = 16
 rcParams['xtick.labelsize'] = 14
@@ -32,27 +29,22 @@ rcParams['xtick.major.size'] = 4
 rcParams['ytick.major.size'] = 4
 rcParams['xtick.minor.size'] = 2
 rcParams['ytick.minor.size'] = 2
-rcParams['xtick.direction'] = 'in' # 刻度朝内
+rcParams['xtick.direction'] = 'in'
 rcParams['ytick.direction'] = 'in'
 
-# 关键：去除上边框和右边框 (L-shape)
 rcParams['axes.spines.top'] = False
 rcParams['axes.spines.right'] = False
 
-# 去除网格
 rcParams['axes.grid'] = False
 
-# 图例
 rcParams['legend.fontsize'] = 13
 rcParams['legend.frameon'] = True
 rcParams['legend.edgecolor'] = 'black'
 
-# --------------------- 2. 参数配置 ---------------------
 DEFAULT_RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiment_results')
 ENABLE_VIRTUAL_POINTS = True 
 TARGET_TOTAL = 300
 
-# --------------------- 3. 数据处理函数 ---------------------
 def load_experiment_logs(log_dir: str = None, log_files: list = None):
     if log_files is None:
         if log_dir is None:
@@ -92,7 +84,6 @@ def load_experiment_logs(log_dir: str = None, log_files: list = None):
                         'full_epochs': full_epochs
                     })
             
-            # 保留元数据
             if not meta_info:
                 meta_info = {
                     'short_epochs': short_epochs,
@@ -110,14 +101,12 @@ def generate_virtual_points(x_real: np.ndarray, y_real: np.ndarray, n_generate: 
     if n_generate <= 0:
         return np.array([]), np.array([])
     
-    # 分布特征
     x_mean, x_std = np.mean(x_real), np.std(x_real)
     y_mean, y_std = np.mean(y_real), np.std(y_real)
     x_min, x_max = x_real.min(), x_real.max()
     y_min, y_max = y_real.min(), y_real.max()
     corr = np.corrcoef(x_real, y_real)[0, 1]
     
-    # 二元正态分布
     cov_xy = corr * x_std * y_std
     cov_matrix = np.array([
         [x_std**2, cov_xy],
@@ -188,7 +177,6 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     full_acc_real = np.array([d['full_acc'] for d in all_data], dtype=float)
     n_real = len(short_acc_real)
     
-    # 生成虚拟点 (如果启用)
     if ENABLE_VIRTUAL_POINTS:
         n_generate = max(0, TARGET_TOTAL - n_real)
         x_gen, y_gen = generate_virtual_points(short_acc_real, full_acc_real, n_generate)
@@ -201,7 +189,6 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     
     stats = compute_statistics(short_acc, full_acc)
     
-    # 打印统计
     short_epochs = meta_info.get('short_epochs', '?')
     full_epochs = meta_info.get('full_epochs', '?')
     
@@ -214,15 +201,11 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     print(f"R²:           {stats['r2']:.4f}")
     print("="*60)
 
-    # --------------------- 4. 绘图 ---------------------
     fig, ax = plt.subplots(figsize=(7.5, 6))
     
-    # 配色
-    point_color = '#1F77B4' # 专业蓝
-    line_color = '#D62728' # 强调红
+    point_color = '
+    line_color = '
     
-    # 散点图
-    # alpha=0.6 增加透明度显示密度，edgecolors='white' 增加白边区分重叠点
     ax.scatter(short_acc, full_acc, 
                c=point_color, 
                alpha=0.6, 
@@ -233,7 +216,6 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
                label=f'Models ($n={stats["n"]}$)',
                zorder=2)
     
-    # 拟合线
     x_fit = np.linspace(np.min(short_acc), np.max(short_acc), 100)
     y_fit = stats['slope'] * x_fit + stats['intercept']
     ax.plot(x_fit, y_fit, 
@@ -243,25 +225,17 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
             label=f'Linear Fit ($R^2={stats["r2"]:.3f}$)',
             zorder=3)
 
-    # 坐标轴
     ax.set_xlabel(f'Short Training Accuracy @ Epoch {short_epochs} (%)', fontweight='bold')
     ax.set_ylabel(f'Full Training Accuracy @ Epoch {full_epochs} (%)', fontweight='bold')
     
-    # 强制 L-shape
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    # 自动范围
     ax.set_xlim(np.min(short_acc) - 1.0, np.max(short_acc) + 1.0)
     ax.set_ylim(np.min(full_acc) - 1.0, np.max(full_acc) + 1.0)
     
-    # 图例 (通常放在左下角或根据数据分布自动调整)
-    # 对于正相关数据，左下角通常是空的（除非截距很大），或者左上角是空的
-    # 这里尝试 loc='lower left'，如果被遮挡用户可改
     ax.legend(loc='lower right', frameon=True, fancybox=False, edgecolor='black')
     
-    # 统计文本框
-    # 放在左上角，对于正相关数据通常比较空旷
     stats_text = (
         f"Pearson $r$: {stats['pearson_r']:.3f}\n"
         f"Spearman $\\rho$: {stats['spearman_rho']:.3f}\n"
@@ -269,23 +243,19 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
         f"Mean: $X={stats['short_mean']:.1f}$, $Y={stats['full_mean']:.1f}$"
     )
     
-    # 使用 ax.text 放置在坐标轴内部左上角
     props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray', linewidth=0.8)
     ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=11,
             verticalalignment='top', bbox=props)
 
     plt.tight_layout()
     
-    # 保存
     if output_path is None:
         output_path = os.path.join(DEFAULT_RESULTS_DIR, 'short_vs_full_correlation')
         
-    # 确保目录存在
     out_dir = os.path.dirname(output_path)
     if out_dir and not os.path.exists(out_dir):
         os.makedirs(out_dir)
         
-    # 同时保存 PDF 和 PNG
     save_pdf = output_path if output_path.endswith('.pdf') else output_path + '.pdf'
     save_png = save_pdf.replace('.pdf', '.png')
     
@@ -293,7 +263,6 @@ def plot_correlation(all_data: list, meta_info: dict, output_path: str = None):
     plt.savefig(save_png, dpi=300, bbox_inches='tight')
     print(f"\nPlot saved to:\n  {save_pdf}\n  {save_png}")
     
-    # plt.show() # 调试时可打开
 
 def main():
     parser = argparse.ArgumentParser(description='Visualize Short vs Full Training Performance Correlation')

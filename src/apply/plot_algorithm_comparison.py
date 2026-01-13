@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-可视化脚本：Top-tier Minimalist Style (Refined Inset & Legend)
-优化点：图例右下角放置，手动优化放大图连接线与边框
+Plot algorithm comparison figures.
 """
+
 
 import os
 import json
@@ -15,17 +15,14 @@ from scipy.spatial import ConvexHull
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from datetime import datetime
 
-# --------------------- 1. 全局配置 (极简顶刊风格) ---------------------
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
 rcParams['axes.unicode_minus'] = False
 
-# 字体设置：Times New Roman
 rcParams['font.family'] = 'serif'
 rcParams['font.serif'] = ['Times New Roman']
 rcParams['mathtext.fontset'] = 'stix'
 
-# 线条与刻度
 rcParams['axes.linewidth'] = 1.2
 rcParams['axes.labelsize'] = 16
 rcParams['xtick.labelsize'] = 14
@@ -37,19 +34,15 @@ rcParams['ytick.minor.size'] = 2
 rcParams['xtick.direction'] = 'in'
 rcParams['ytick.direction'] = 'in'
 
-# 关键：去除上边框和右边框 (L-shape)
 rcParams['axes.spines.top'] = False
 rcParams['axes.spines.right'] = False
 
-# 去除网格
 rcParams['axes.grid'] = False
 
-# 图例
 rcParams['legend.fontsize'] = 13
 rcParams['legend.frameon'] = True
 rcParams['legend.edgecolor'] = 'black'
 
-# --------------------- 2. 数据与配色配置 ---------------------
 ALGORITHM_ALIASES = {
     'Aging_NTK_Search': ['Aging_NTK_Search', 'three_stage_ea'],
     'Aging_Search': ['Aging_Search', 'traditional_ea'],
@@ -57,7 +50,6 @@ ALGORITHM_ALIASES = {
 }
 ALGORITHM_KEYS = list(ALGORITHM_ALIASES.keys())
 
-# 专业配色 (RGB Hex)
 COLORS = {
     'Aging_NTK_Search': '#D62728', # Red (SOTA)
     'Aging_Search': '#1F77B4',     # Blue (Competitor)
@@ -77,7 +69,6 @@ LABELS = {
 }
 
 def generate_simulated_data():
-    """生成模拟数据"""
     np.random.seed(42)
     ts_params = np.linspace(0.8, 2.5, 15)
     ts_accs = 95.0 + 1.5 * np.exp(-ts_params) + np.random.normal(0, 0.1, 15)
@@ -175,44 +166,34 @@ def plot_algorithm_comparison(data: dict,
             except:
                 pass
 
-    # --------------------- 坐标轴与标签 ---------------------
     ax.set_xlabel('Parameters (M)', fontweight='bold')
     ax.set_ylabel('Top-1 Accuracy (%)', fontweight='bold')
     
-    # 强制 L-shape
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    # 自动范围
     all_p = [p for d in data.values() for p in d['params']]
     all_a = [a for d in data.values() for a in d['accs']]
     if all_p and all_a:
         ax.set_xlim(0, max(all_p) * 1.05)
         ax.set_ylim(min(50, min(all_a) * 0.9), min(100, max(all_a) * 1.02))
 
-    # [修改点1] 图例放置在右下角
-    # 使用 bbox_to_anchor 微调位置，避免贴边太紧
     ax.legend(loc='lower right', frameon=True, fancybox=False, 
               bbox_to_anchor=(0.98, 0.02), ncol=1)
 
-    # --------------------- 局部放大图 (优化版) ---------------------
     if show_inset and 'Aging_NTK_Search' in data and len(data['Aging_NTK_Search']['params']) >= 3:
         ts_p = np.array(data['Aging_NTK_Search']['params'])
         ts_a = np.array(data['Aging_NTK_Search']['accs'])
         
-        # 定义放大区域
         x1, x2 = ts_p.min(), ts_p.max()
         y1, y2 = ts_a.min(), ts_a.max()
         x_range = x2 - x1
         y_range = y2 - y1
-        # 稍微扩大一点边界
         rect_x1, rect_x2 = x1 - 0.1 * x_range, x2 + 0.1 * x_range
         rect_y1, rect_y2 = y1 - 0.2 * y_range, y2 + 0.2 * y_range
         
-        # 创建 inset
         axins = inset_axes(ax, width="30%", height="35%", loc='upper right')
         
-        # 绘制 inset 内容
         for sub_key in plot_order:
             if sub_key not in data or not data[sub_key]['params']: continue
             sub_p = np.array(data[sub_key]['params'])
@@ -237,15 +218,11 @@ def plot_algorithm_comparison(data: dict,
         axins.set_ylim(rect_y1, rect_y2)
         axins.tick_params(axis='both', which='major', labelsize=10, width=1.0, length=3, direction='in')
         
-        # Inset 边框红色
         for spine in axins.spines.values():
             spine.set_edgecolor(COLORS['Aging_NTK_Search'])
             spine.set_linewidth(1.2)
             
-        # --------------------- [修改点2] 手动绘制连接线与放大框 ---------------------
         
-        # 1. 在主图上画出放大的矩形框
-        # 使用 SOTA 的红色虚线框
         rect = Rectangle((rect_x1, rect_y1), rect_x2 - rect_x1, rect_y2 - rect_y1,
                          edgecolor=COLORS['Aging_NTK_Search'], 
                          facecolor='none', 
@@ -254,13 +231,8 @@ def plot_algorithm_comparison(data: dict,
                          zorder=10)
         ax.add_patch(rect)
         
-        # 2. 手动绘制连接线
-        # 连接主图的矩形框左上角 -> Inset左上角
-        # 连接主图的矩形框右下角 -> Inset右下角
-        # 这种对角线连接方式清晰且不杂乱
         
         con_list = [
-            # xyA: 主图数据坐标, xyB: Inset轴比例坐标 (0~1)
             ConnectionPatch(xyA=(rect_x1, rect_y2), xyB=(0, 1), coordsA="data", coordsB="axes fraction",
                            axesA=ax, axesB=axins, color="gray", linestyle="--", alpha=0.5, linewidth=1.0),
             ConnectionPatch(xyA=(rect_x2, rect_y1), xyB=(1, 0), coordsA="data", coordsB="axes fraction",

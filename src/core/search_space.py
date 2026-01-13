@@ -1,19 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-搜索空间模块
-定义搜索空间和随机生成逻辑
+Search space definitions and random sampling utilities.
 """
 import random
 from typing import List, Optional
 from configuration.config import config
 from core.encoding import Encoder, Individual, BlockParams
-from utils.logger import logger
-from configuration.config import config
+
 
 class SearchSpace:
-    """
-    搜索空间定义类
-    """
+    """Defines available hyperparameter options."""
+
     def __init__(self):
         self.min_unit_num = config.MIN_UNIT_NUM
         self.max_unit_num = config.MAX_UNIT_NUM
@@ -28,45 +25,51 @@ class SearchSpace:
         self.dropout_options = config.DROPOUT_OPTIONS
         self.skip_type_options = config.SKIP_TYPE_OPTIONS
         self.kernel_size_options = config.KERNEL_SIZE_OPTIONS
-    
+        self.expansion_options = config.EXPANSION_OPTIONS
+
     def sample_unit_num(self) -> int:
         return random.randint(self.min_unit_num, self.max_unit_num)
-    
+
     def sample_block_num(self) -> int:
         return random.randint(self.min_block_num, self.max_block_num)
-    
+
     def sample_channel(self) -> int:
         return random.choice(self.channel_options)
-    
+
     def sample_groups(self) -> int:
         return random.choice(self.group_options)
-    
+
     def sample_pool_type(self) -> int:
         return random.choice(self.pool_type_options)
-    
+
     def sample_pool_stride(self) -> int:
         return random.choice(self.pool_stride_options)
-    
+
     def sample_senet(self) -> int:
         return random.choice(self.senet_options)
-    
+
     def sample_activation(self) -> int:
-        """采样激活函数类型: 0=ReLU, 1=SiLU, 2=GELU"""
+        # Activation types: 0=ReLU, 1=SiLU.
         return random.choice(self.activation_options)
-    
+
     def sample_dropout(self) -> float:
-        """采样Dropout率"""
         return random.choice(self.dropout_options)
-    
-    def sample_skip_type(self) -> int:
-        """采样跳跃连接类型: 0=add, 1=concat, 2=none"""
-        return random.choice(self.skip_type_options)
-    
+
+    def sample_skip_type(self, allow_concat: bool = True) -> int:
+        # Skip types: 0=add, 1=concat, 2=none.
+        options = self.skip_type_options if allow_concat else [
+            opt for opt in self.skip_type_options if opt != 1
+        ]
+        return random.choice(options)
+
     def sample_kernel_size(self) -> int:
-        """采样卷积核大小: 3, 5, 7"""
         return random.choice(self.kernel_size_options)
-    
-    def sample_block_params(self) -> BlockParams:
+
+    def sample_expansion(self) -> int:
+        return random.choice(self.expansion_options)
+
+    def sample_block_params(self, allow_concat: bool = True) -> BlockParams:
+        # allow_concat limits concat skips to the last block in a unit.
         out_channels = self.sample_channel()
         groups = self.sample_groups()
         pool_type = self.sample_pool_type()
@@ -74,18 +77,19 @@ class SearchSpace:
         has_senet = self.sample_senet()
         activation_type = self.sample_activation()
         dropout_rate = self.sample_dropout()
-        skip_type = self.sample_skip_type()
+        skip_type = self.sample_skip_type(allow_concat=allow_concat)
         kernel_size = self.sample_kernel_size()
+        expansion = self.sample_expansion()
         return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
-                           activation_type, dropout_rate, skip_type, kernel_size)
+                           activation_type, dropout_rate, skip_type, kernel_size, expansion)
+
 
 class PopulationInitializer:
-    """
-    种群初始化器
-    """
-    def __init__(self,search_space:SearchSpace):
+    """Creates initial valid individuals under constraints."""
+
+    def __init__(self, search_space: SearchSpace):
         self.search_space = search_space
-    
+
     def create_valid_individual(self) -> Optional[Individual]:
         while True:
             encoding = self._create_constrained_encoding()
@@ -94,53 +98,54 @@ class PopulationInitializer:
             print("生成的个体不合法，重新生成...")
             print(encoding)
 
-    
     def _create_constrained_encoding(self) -> List[int]:
-
         max_downsampling = Encoder.get_max_downsampling()
         unit_num = self.search_space.sample_unit_num()
         encoding = [unit_num]
         block_nums = []
-        
+
         for _ in range(unit_num):
             block_num = self.search_space.sample_block_num()
             block_nums.append(block_num)
             encoding.append(block_num)
-        
+
         downsampling_count = 0
         current_channels = config.INIT_CONV_OUT_CHANNELS
-        
+
         for block_num in block_nums:
-            for _ in range(block_num):
-                # 尝试生成有效的block参数，最多尝试10次
-                for attempt in range(10):
-                    block_params = self.search_space.sample_block_params()
-                    
-                    # 约束下采样
+            for block_idx in range(block_num):
+                # Only the last block in a unit may use concat skips.
+                is_last_block = block_idx == block_num - 1
+                # Try to generate valid block params, up to 10 attempts.
+                for _ in range(10):
+                    block_params = self.search_space.sample_block_params(
+                        allow_concat=is_last_block
+                    )
+
                     if downsampling_count >= max_downsampling and block_params.pool_stride == 2:
                         block_params.pool_stride = 1
                     elif block_params.pool_stride == 2:
                         downsampling_count += 1
-                    
-                    # 约束通道数
-                    out_channels = block_params.out_channels * config.EXPANSION
+
+                    out_channels = block_params.out_channels * block_params.expansion
                     if block_params.skip_type == 1:  # concat
                         final_channels = out_channels + current_channels
                     else:
                         final_channels = out_channels
-                    
+
                     if final_channels <= config.MAX_CHANNELS:
                         current_channels = final_channels
                         encoding.extend(block_params.to_list())
                         break
                 else:
-                    # 如果10次都失败了，使用add模式强制通过
-                    block_params.skip_type = 0  # force add mode
+                    # Fall back to add skip if sampling fails repeatedly.
+                    block_params.skip_type = 0
                     final_channels = out_channels
                     current_channels = final_channels
                     encoding.extend(block_params.to_list())
-        
+
         return encoding
+
 
 # Global instances
 search_space = SearchSpace()
