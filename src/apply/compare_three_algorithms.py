@@ -444,9 +444,9 @@ def plot_pareto_comparison(three_stage_models: List[ModelInfo],
     rs_params, rs_accs = extract_data(random_models)
     
     colors = {
-        'three_stage': '
-        'traditional': '
-        'random': '
+        'three_stage': '#D62728',
+        'traditional': '#1F77B4',
+        'random': '#7F7F7F'
     }
     
     alpha_hull = 0.25
@@ -677,48 +677,107 @@ def run_experiment(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='三种搜索算法对比实验')
-    
-    parser.add_argument('--ts_ntk_evals', type=int, default=1000,
-                        help='三阶段EA的NTK评估次数')
-    parser.add_argument('--ts_pop_size', type=int, default=50,
-                        help='三阶段EA的种群大小')
-    parser.add_argument('--ts_top_n1', type=int, default=20,
-                        help='三阶段EA第一轮筛选Top N1')
-    parser.add_argument('--ts_top_n2', type=int, default=10,
-                        help='三阶段EA第二轮筛选Top N2')
-    parser.add_argument('--ts_short_epochs', type=int, default=30,
-                        help='三阶段EA短期训练轮数')
-    
-    parser.add_argument('--te_evals', type=int, default=15,
-                        help='传统EA的搜索阶段评估次数')
-    parser.add_argument('--te_pop_size', type=int, default=5,
-                        help='传统EA的种群大小')
-    parser.add_argument('--te_top_n', type=int, default=10,
-                        help='传统EA完整训练的Top N模型数')
-    parser.add_argument('--te_search_epochs', type=int, default=30,
-                        help='传统EA搜索阶段训练轮数（适应度评估）')
-    
-    parser.add_argument('--rs_samples', type=int, default=16,
-                        help='随机搜索的采样数量')
-    
-    parser.add_argument('--full_epochs', type=int, default=100,
-                        help='完整训练轮数')
-    
-    parser.add_argument('--skip_three_stage', action='store_true',
-                        help='跳过三阶段EA')
-    parser.add_argument('--skip_traditional', action='store_true',
-                        help='跳过传统EA')
-    parser.add_argument('--skip_random', action='store_true',
-                        help='跳过随机搜索')
-    parser.add_argument('--no_show', action='store_true',
-                        help='不显示图表')
-    
-    parser.add_argument('--quick_test', action='store_true',
-                        help='快速测试模式（减少评估次数和训练轮数）')
-    
+    parser = argparse.ArgumentParser(description="Compare three search algorithms")
+
+    parser.add_argument(
+        "--ts_ntk_evals",
+        type=int,
+        default=1000,
+        help="Three-stage EA NTK evaluation count",
+    )
+    parser.add_argument(
+        "--ts_pop_size",
+        type=int,
+        default=50,
+        help="Three-stage EA population size",
+    )
+    parser.add_argument(
+        "--ts_top_n1",
+        type=int,
+        default=20,
+        help="Three-stage EA top N1 after NTK screening",
+    )
+    parser.add_argument(
+        "--ts_top_n2",
+        type=int,
+        default=10,
+        help="Three-stage EA top N2 after short training",
+    )
+    parser.add_argument(
+        "--ts_short_epochs",
+        type=int,
+        default=30,
+        help="Three-stage EA short training epochs",
+    )
+
+    parser.add_argument(
+        "--te_evals",
+        type=int,
+        default=15,
+        help="Traditional EA evaluation count",
+    )
+    parser.add_argument(
+        "--te_pop_size",
+        type=int,
+        default=5,
+        help="Traditional EA population size",
+    )
+    parser.add_argument(
+        "--te_top_n",
+        type=int,
+        default=10,
+        help="Traditional EA full-training top N",
+    )
+    parser.add_argument(
+        "--te_search_epochs",
+        type=int,
+        default=30,
+        help="Traditional EA search training epochs",
+    )
+
+    parser.add_argument(
+        "--rs_samples",
+        type=int,
+        default=16,
+        help="Random search sample count",
+    )
+
+    parser.add_argument(
+        "--full_epochs",
+        type=int,
+        default=100,
+        help="Full training epochs",
+    )
+
+    parser.add_argument(
+        "--skip_three_stage",
+        action="store_true",
+        help="Skip three-stage EA",
+    )
+    parser.add_argument(
+        "--skip_traditional",
+        action="store_true",
+        help="Skip traditional EA",
+    )
+    parser.add_argument(
+        "--skip_random",
+        action="store_true",
+        help="Skip random search",
+    )
+    parser.add_argument(
+        "--no_show",
+        action="store_true",
+        help="Do not display plots",
+    )
+
+    parser.add_argument(
+        "--quick_test",
+        action="store_true",
+        help="Quick test mode with reduced evaluations and epochs",
+    )
+
     args = parser.parse_args()
-    
+
     if args.quick_test:
         args.ts_ntk_evals = 50
         args.ts_pop_size = 10
@@ -732,7 +791,7 @@ def main():
         args.rs_samples = 5
         args.full_epochs = 10
         logger.info("Using quick test mode")
-    
+
     run_experiment(args)
 
 

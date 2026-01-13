@@ -41,3 +41,4 @@ Thumbs.db
 /src/data/cifar-10-python.tar.gz
 
 .vs
+.pytest_cache/
