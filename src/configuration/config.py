@@ -15,9 +15,9 @@ class Config:
 
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE =100         # 种群大小 (Aging Evolution Queue Size)
+    POPULATION_SIZE =500         # 种群大小 (Aging Evolution Queue Size)
     MAX_GEN = 5000               # 最大进化代数 (Total number of individuals to evaluate in search)
-    TOURNAMENT_SIZE = 5            # 锦标赛选择的样本大小 (Sample Size)
+    TOURNAMENT_SIZE = 3            # 锦标赛选择的样本大小 (Sample Size)
     TOURNAMENT_WINNERS = 2          # 锦标赛选择的胜者数量 (Parent Size)
     
     # ==================== 筛选与训练流程参数 ====================
@@ -33,14 +33,14 @@ class Config:
     
 
     # ==================== 搜索空间参数 ====================
-    MIN_UNIT_NUM = 3                # 最小unit数量
-    MAX_UNIT_NUM = 6               # 最大unit数量
+    MIN_UNIT_NUM = 2                # 最小unit数量
+    MAX_UNIT_NUM = 4               # 最大unit数量
     
-    MIN_BLOCK_NUM = 2               # 每个unit最小block数量
-    MAX_BLOCK_NUM = 6               # 每个unit最大block数量
+    MIN_BLOCK_NUM = 3               # 每个unit最小block数量
+    MAX_BLOCK_NUM = 4               # 每个unit最大block数量
     
-    CHANNEL_OPTIONS = [16,32, 64, 128, 256] 
-    GROUP_OPTIONS = [1, 2, 4, 8, 16]
+    CHANNEL_OPTIONS = [64, 128, 256] 
+    GROUP_OPTIONS = [4, 8, 16]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
@@ -49,11 +49,11 @@ class Config:
     # 激活函数类型: 0=ReLU, 1=SiLU, 2=GELU
     ACTIVATION_OPTIONS = [0, 1, 2]
     # Dropout率选项
-    DROPOUT_OPTIONS = [0.0, 0.1, 0.2, 0.3]
+    DROPOUT_OPTIONS = [0.0, 0.1]
     # 跳跃连接类型: 0=add, 1=concat, 2=none
     SKIP_TYPE_OPTIONS = [0, 1, 2]
     # 卷积核大小
-    KERNEL_SIZE_OPTIONS = [3, 5, 7]
+    KERNEL_SIZE_OPTIONS = [3, 5]
     
     # Block扩展参数 (输出通道 = 中间通道 × EXPANSION)
     # EXPANSION=1 时与原模型一致，EXPANSION=2 时类似ResNeXt
