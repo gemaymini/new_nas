@@ -39,6 +39,13 @@ def parse_args():
         help="Dataset for training and evaluation (default: cifar10)",
     )
     parser.add_argument(
+        "--optimizer",
+        type=str,
+        default=config.OPTIMIZER,
+        choices=config.OPTIMIZER_OPTIONS,
+        help="Optimizer to use for training (default: adamw)",
+    )
+    parser.add_argument(
         "--imagenet_root",
         type=str,
         default=config.IMAGENET_ROOT,
@@ -59,6 +66,7 @@ def main():
     args = parse_args()
     set_seed(args.seed)
     config.FINAL_DATASET = args.dataset
+    config.OPTIMIZER = args.optimizer
 
     if args.dataset == "imagenet":
         config.IMAGENET_ROOT = args.imagenet_root
@@ -76,6 +84,7 @@ def main():
 
     logger.info(f"Dataset: {config.FINAL_DATASET}, Num Classes: {config.NTK_NUM_CLASSES}")
     logger.info(f"Input Size: {config.NTK_INPUT_SIZE}")
+    logger.info(f"Optimizer: {config.OPTIMIZER}")
 
     from engine.evaluator import fitness_evaluator
     fitness_evaluator.reset()

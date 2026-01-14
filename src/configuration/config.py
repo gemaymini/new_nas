@@ -14,16 +14,16 @@ class Config:
     DATA_DIR = os.path.join(BASE_DIR, "data")
 
     # ==================== Evolution parameters ====================
-    POPULATION_SIZE = 5          # Aging Evolution queue size
-    MAX_GEN = 10                 # Total individuals evaluated in search
+    POPULATION_SIZE = 200          # Aging Evolution queue size
+    MAX_GEN = 5000                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
     # ==================== Screening/training pipeline ====================
-    HISTORY_TOP_N1 = 1            # Stage 1: Top N1 by NTK
-    SHORT_TRAIN_EPOCHS = 5        # Stage 1 short training epochs
-    HISTORY_TOP_N2 = 1             # Stage 2: Top N2 by validation accuracy
-    FULL_TRAIN_EPOCHS = 5        # Final training epochs
+    HISTORY_TOP_N1 = 10            # Stage 1: Top N1 by NTK
+    SHORT_TRAIN_EPOCHS = 20        # Stage 1 short training epochs
+    HISTORY_TOP_N2 = 5             # Stage 2: Top N2 by validation accuracy
+    FULL_TRAIN_EPOCHS = 600        # Final training epochs
 
     # ==================== Crossover/mutation ====================
     PROB_CROSSOVER = 0.5           # Crossover probability
@@ -32,7 +32,7 @@ class Config:
     # ==================== Search space ====================
     MIN_UNIT_NUM = 2               # Min unit count
     MAX_UNIT_NUM = 4               # Max unit count
-    MIN_BLOCK_NUM = 3              # Min blocks per unit
+    MIN_BLOCK_NUM = 2              # Min blocks per unit
     MAX_BLOCK_NUM = 4              # Max blocks per unit
 
     CHANNEL_OPTIONS = [64, 128, 256]
@@ -76,10 +76,62 @@ class Config:
     # ==================== Training ====================
     DEVICE = "cuda"
     BATCH_SIZE = 128
-    LEARNING_RATE = 1e-3
-    WEIGHT_DECAY = 1e-2
-    ADAMW_BETAS = (0.9, 0.999)
+
+    # Optimizer selection and hyperparameters (CIFAR defaults, batch=128)
+    OPTIMIZER_OPTIONS = ["adamw", "sgd", "radam", "adam", "rmsprop"]
+    OPTIMIZER = "adamw"  # Options: adamw, sgd, radam, adam, rmsprop
+
+    # Adam-family settings
+    ADAMW_BETAS = (0.9, 0.98)
     ADAMW_EPS = 1e-8
+
+    # SGD settings
+    SGD_MOMENTUM = 0.9
+    SGD_NESTEROV = True
+
+    # RMSprop settings
+    RMSPROP_ALPHA = 0.99
+    RMSPROP_MOMENTUM = 0.9
+
+    # Optimizer-specific recommended defaults
+    OPTIMIZER_DEFAULTS = {
+        "adamw": {
+            "lr": 3e-4,
+            "weight_decay": 5e-3,
+            "betas": ADAMW_BETAS,
+            "eps": ADAMW_EPS,
+            "warmup_epochs": 5,
+        },
+        "adam": {
+            "lr": 3e-4,
+            "weight_decay": 5e-3,
+            "betas": ADAMW_BETAS,
+            "eps": ADAMW_EPS,
+            "warmup_epochs": 5,
+        },
+        "sgd": {
+            "lr": 0.1,
+            "weight_decay": 5e-4,
+            "momentum": 0.9,
+            "nesterov": True,
+            "warmup_epochs": 5,
+        },
+        "radam": {
+            "lr": 5e-4,
+            "weight_decay": 5e-3,
+            "betas": (0.9, 0.999),
+            "eps": ADAMW_EPS,
+            "warmup_epochs": 5,
+        },
+        "rmsprop": {
+            "lr": 1e-3,
+            "weight_decay": 1e-4,
+            "alpha": RMSPROP_ALPHA,
+            "momentum": RMSPROP_MOMENTUM,
+            "eps": ADAMW_EPS,
+            "warmup_epochs": 0,
+        },
+    }
 
     # ==================== Early stopping ====================
     EARLY_STOPPING_ENABLED = True   # Enable early stopping
@@ -125,6 +177,13 @@ class Config:
         """Return a short search-space summary string."""
         # Simplified for now, can be expanded
         return "Search Space Summary"
+
+    def get_optimizer_params(self, optimizer_name: str) -> dict:
+        """Return a copy of optimizer-specific defaults."""
+        name = optimizer_name.lower()
+        if name not in self.OPTIMIZER_DEFAULTS:
+            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+        return self.OPTIMIZER_DEFAULTS[name].copy()
 
 
 # Global config instance
