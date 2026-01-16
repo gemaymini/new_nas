@@ -25,10 +25,19 @@ def generate_valid_child(
     """
     Generate an offspring that passes encoding validation and param bounds.
 
-    crossover_fn should return (child1, child2, detail_dict or None).
-    mutation_fn should take and return an Individual.
-    repair_fn, if provided, should take and return an Individual, ensuring validity.
-    resample_fn returns a fresh valid Individual (used as fallback).
+    Args:
+        parent1 (Individual): First parent.
+        parent2 (Individual): Second parent.
+        crossover_fn (Callable): Function to perform crossover.
+        mutation_fn (Callable): Function to perform mutation.
+        repair_fn (Optional[Callable]): Function to repair invalid encodings.
+        resample_fn (Callable): Function to generate a fresh individual if needed.
+        crossover_prob (float, optional): Probability of crossover.
+        mutation_prob (float, optional): Probability of mutation.
+        max_attempts (int): Maximum attempts to generate a valid child before falling back to resample.
+
+    Returns:
+        Individual: A valid offspring.
     """
     crossover_prob = crossover_prob if crossover_prob is not None else config.PROB_CROSSOVER
     mutation_prob = mutation_prob if mutation_prob is not None else config.PROB_MUTATION

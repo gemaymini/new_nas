@@ -20,6 +20,12 @@ from utils.constraints import update_param_bounds_for_dataset
 
 
 def set_seed(seed: int):
+    """
+    Set random seeds for reproducibility across random, numpy, and torch.
+
+    Args:
+        seed (int): The seed value to use.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -31,6 +37,12 @@ def set_seed(seed: int):
 
 
 def parse_args():
+    """
+    Parse command-line arguments for the NAS search and training.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser(description="Evolutionary NAS")
     parser.add_argument(
         "--dataset",
@@ -61,6 +73,12 @@ def parse_args():
 
 
 def main():
+    """
+    Main execution entry point.
+
+    Sets up logging, configuration, and runs the evolutionary search followed by
+    screening and final training.
+    """
     logger.setup_file_logging()
     tb_logger.setup()
 

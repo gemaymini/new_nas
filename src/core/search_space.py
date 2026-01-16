@@ -10,7 +10,9 @@ from utils.constraints import evaluate_encoding_params
 
 
 class SearchSpace:
-    """Defines available hyperparameter options."""
+    """
+    Defines available hyperparameter options and sampling methods.
+    """
 
     def __init__(self):
         self.min_unit_num = config.MIN_UNIT_NUM
@@ -29,9 +31,11 @@ class SearchSpace:
         self.expansion_options = config.EXPANSION_OPTIONS
 
     def sample_unit_num(self) -> int:
+        """Randomly sample the number of units."""
         return random.randint(self.min_unit_num, self.max_unit_num)
 
     def sample_block_num(self) -> int:
+        """Randomly sample the number of blocks within a unit."""
         return random.randint(self.min_block_num, self.max_block_num)
 
     def sample_channel(self) -> int:
@@ -67,9 +71,20 @@ class SearchSpace:
         return random.choice(self.kernel_size_options)
 
     def sample_expansion(self) -> int:
+        """Randomly sample the expansion factor."""
         return random.choice(self.expansion_options)
 
+
     def sample_block_params(self, allow_concat: bool = True) -> BlockParams:
+        """
+        Sample a complete set of parameters for a single block.
+
+        Args:
+            allow_concat (bool): Whether to allow 'concat' skip connection.
+
+        Returns:
+            BlockParams: Sampled block parameters.
+        """
         # allow_concat limits concat skips to the last block in a unit.
         out_channels = self.sample_channel()
         groups = self.sample_groups()
@@ -89,9 +104,21 @@ class PopulationInitializer:
     """Creates initial valid individuals under constraints."""
 
     def __init__(self, search_space: SearchSpace):
+        """
+        Initialize the population initializer.
+
+        Args:
+            search_space (SearchSpace): Search space definition to sample from.
+        """
         self.search_space = search_space
 
     def create_valid_individual(self) -> Optional[Individual]:
+        """
+        Create a single valid individual that satisfies all constraints.
+
+        Returns:
+            Individual: A valid, initialized individual.
+        """
         while True:
             encoding = self._create_constrained_encoding()
             if not Encoder.validate_encoding(encoding):
@@ -108,6 +135,12 @@ class PopulationInitializer:
             return ind
 
     def _create_constrained_encoding(self) -> List[int]:
+        """
+        Generate a random encoding and attempt to enforce constraints during sampling.
+
+        Returns:
+            List[int]: A potential architecture encoding.
+        """
         max_downsampling = Encoder.get_max_downsampling()
         unit_num = self.search_space.sample_unit_num()
         encoding = [unit_num]

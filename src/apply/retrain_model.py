@@ -20,30 +20,27 @@ from engine.trainer import NetworkTrainer
 from configuration.config import config
 from utils.constraints import update_param_bounds_for_dataset
 from utils.logger import logger
+from utils.checkpoint import load_checkpoint, extract_encoding_from_checkpoint
 
+def load_model_encoding_wrapper(model_path: str) -> list:
+    """Wrapper to maintain backward compatibility if needed, but using new utils."""
+    try:
+        checkpoint = load_checkpoint(model_path, device='cpu')
+    except Exception as e:
+        if "not found" in str(e):
+            raise FileNotFoundError(str(e))
+        raise ValueError(str(e))
 
-def load_model_encoding(model_path: str) -> list:
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
-    
     print(f"INFO: loading_model={model_path}")
-    checkpoint = torch.load(model_path, map_location='cpu')
     
-    encoding = None
+    encoding = extract_encoding_from_checkpoint(checkpoint)
+    print("INFO: encoding_found")
     
     if isinstance(checkpoint, dict):
-        if 'encoding' in checkpoint:
-            encoding = checkpoint['encoding']
-            print("INFO: encoding_found")
-            
-            for k, v in checkpoint.items():
-                if k not in ['state_dict', 'encoding', 'history']:
-                    print(f"INFO: meta {k}={v}")
-        else:
-            raise ValueError("Checkpoint does not contain 'encoding' key. Cannot extract model structure.")
-    else:
-        raise ValueError("Unknown checkpoint format. Expected a dict with 'encoding' key.")
-    
+        for k, v in checkpoint.items():
+            if k not in ['state_dict', 'encoding', 'history', 'model_encoding', 'model_state_dict']:
+                print(f"INFO: meta {k}={v}")
+
     return encoding
 
 
@@ -102,7 +99,7 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
                   dataset: str = 'cifar10', device: str = None,
                   save_results: bool = True, optimizer: str = None,
                   lr: float = None) -> dict:
-    encoding = load_model_encoding(model_path)
+    encoding = load_model_encoding_wrapper(model_path)
     
     print(f"INFO: encoding={encoding}")
     print("INFO: architecture_details")

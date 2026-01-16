@@ -12,6 +12,9 @@ from utils.logger import logger
 
 
 class MutationOperator:
+    """
+    Handles mutation operations on architecture encodings.
+    """
     def __init__(self):
         self.prob_swap_blocks = config.PROB_SWAP_BLOCKS
         self.prob_swap_units = config.PROB_SWAP_UNITS
@@ -22,6 +25,12 @@ class MutationOperator:
         self.prob_modify_block = config.PROB_MODIFY_BLOCK
 
     def _enforce_concat_last(self, block_params_list: List[List]) -> None:
+        """
+        Ensure 'concat' skip type is ONLY present in the last block of a unit.
+        
+        Args:
+            block_params_list: Nested list of block parameters.
+        """
         # Ensure concat skips appear only in the last block of each unit.
         for unit_blocks in block_params_list:
             last_idx = len(unit_blocks) - 1
@@ -30,6 +39,7 @@ class MutationOperator:
                     bp.skip_type = search_space.sample_skip_type(allow_concat=False)
 
     def swap_blocks(self, encoding: List[int]) -> Tuple[List[int], Dict]:
+        """Randomly swap two blocks in the architecture."""
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         all_positions = []
         for unit_idx, block_num in enumerate(block_nums):
@@ -54,6 +64,7 @@ class MutationOperator:
         return Encoder.encode(unit_num, block_nums, block_params_list), detail
 
     def swap_units(self, encoding: List[int]) -> Tuple[List[int], Dict]:
+        """Randomly swap two full units in the architecture."""
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         if unit_num < 2:
             return encoding, {"op": "swap_units", "applied": False, "reason": "not_enough_units"}
@@ -69,6 +80,7 @@ class MutationOperator:
         return Encoder.encode(unit_num, block_nums, block_params_list), detail
 
     def add_unit(self, encoding: List[int]) -> Tuple[List[int], Dict]:
+        """Randomly add a new unit to the architecture."""
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         if unit_num >= config.MAX_UNIT_NUM:
             return encoding, {"op": "add_unit", "applied": False, "reason": "max_unit_limit"}
@@ -89,6 +101,7 @@ class MutationOperator:
         return Encoder.encode(unit_num + 1, block_nums, block_params_list), detail
 
     def add_block(self, encoding: List[int]) -> Tuple[List[int], Dict]:
+        """Randomly add a new block to an existing unit."""
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         valid_units = [i for i in range(unit_num) if block_nums[i] < config.MAX_BLOCK_NUM]
         if not valid_units:
@@ -110,6 +123,7 @@ class MutationOperator:
         return Encoder.encode(unit_num, block_nums, block_params_list), detail
 
     def delete_unit(self, encoding: List[int]) -> Tuple[List[int], Dict]:
+        """Randomly delete a unit from the architecture."""
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         if unit_num <= config.MIN_UNIT_NUM:
             return encoding, {"op": "delete_unit", "applied": False, "reason": "min_unit_limit"}
@@ -126,6 +140,7 @@ class MutationOperator:
         return Encoder.encode(unit_num - 1, block_nums, block_params_list), detail
 
     def delete_block(self, encoding: List[int]) -> Tuple[List[int], Dict]:
+        """Randomly delete a block from a unit."""
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
         valid_units = [i for i in range(unit_num) if block_nums[i] > config.MIN_BLOCK_NUM]
         if not valid_units:
@@ -216,6 +231,15 @@ class MutationOperator:
         return Encoder.encode(unit_num, block_nums, block_params_list), detail
 
     def mutate(self, individual: Individual) -> Individual:
+        """
+        Apply a random set of mutations to an individual.
+
+        Args:
+            individual (Individual): The individual to mutate.
+        
+        Returns:
+            Individual: A new, mutated individual.
+        """
         new_encoding = copy.deepcopy(individual.encoding)
         applied_ops = []
         mutation_applied = False
@@ -264,12 +288,26 @@ class MutationOperator:
 
 
 class SelectionOperator:
+    """
+    Handles parent selection for evolution.
+    """
     def tournament_selection(
         self,
         population: List[Individual],
         tournament_size: int = None,
         num_winners: int = None,
     ) -> List[Individual]:
+        """
+        Select best individuals from random tournaments.
+
+        Args:
+            population (List[Individual]): Candidate pool.
+            tournament_size (int, optional): Size of tournament.
+            num_winners (int, optional): Number of winners to select.
+
+        Returns:
+            List[Individual]: Selected parents.
+        """
         if tournament_size is None:
             tournament_size = config.TOURNAMENT_SIZE
         if num_winners is None:
@@ -286,9 +324,22 @@ class SelectionOperator:
 
 
 class CrossoverOperator:
+    """
+    Handles crossover operations to combine two parents.
+    """
     def uniform_unit_crossover(
         self, parent1: Individual, parent2: Individual
     ) -> Tuple[Individual, Individual, Dict]:
+        """
+        Perform uniform crossover at the unit level.
+
+        Args:
+            parent1 (Individual): First parent.
+            parent2 (Individual): Second parent.
+
+        Returns:
+            Tuple[Individual, Individual, Dict]: Two children and operation details.
+        """
         unit_num1, block_nums1, block_params_list1 = Encoder.decode(parent1.encoding)
         unit_num2, block_nums2, block_params_list2 = Encoder.decode(parent2.encoding)
 
@@ -339,6 +390,9 @@ class CrossoverOperator:
         return child1, child2, detail
 
     def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual, Dict]:
+        """
+        Main entry point for crossover.
+        """
         return self.uniform_unit_crossover(parent1, parent2)
 
 

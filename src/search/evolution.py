@@ -20,9 +20,17 @@ from engine.evaluator import fitness_evaluator, FinalEvaluator
 from utils.generation import generate_valid_child
 from utils.constraints import evaluate_encoding_params
 from utils.logger import logger, tb_logger
+from utils.common import format_time
 
 
 class AgingEvolutionNAS:
+    """
+    Implements Aging Evolution (Regularized Evolution) for NAS.
+    
+    Maintains a population of architectures and evolves them over time using
+    tournament selection and mutation, prioritizing recent high-performing individuals
+    while removing the oldest ones.
+    """
     def __init__(self):
         self.population_size = config.POPULATION_SIZE
         self.max_gen = config.MAX_GEN  # Total individuals to evaluate
@@ -96,7 +104,12 @@ class AgingEvolutionNAS:
         self._save_ntk_history()
 
     def _select_parents(self) -> Tuple[Individual, Individual]:
-        """Tournament selection to choose two parents."""
+        """
+        Tournament selection to choose two parents.
+
+        Returns:
+            Tuple[Individual, Individual]: Two selected parents.
+        """
         current_pop_list = list(self.population)
         parents = selection_operator.tournament_selection(
             current_pop_list,
@@ -106,7 +119,16 @@ class AgingEvolutionNAS:
         return parents[0], parents[1]
 
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        """Generate one offspring using crossover and mutation."""
+        """
+        Generate one offspring using crossover and mutation.
+
+        Args:
+            parent1 (Individual): First parent.
+            parent2 (Individual): Second parent.
+        
+        Returns:
+            Individual: The generated offspring.
+        """
         return generate_valid_child(
             parent1=parent1,
             parent2=parent2,
@@ -128,11 +150,16 @@ class AgingEvolutionNAS:
 
     def step(self) -> bool:
         """
-        One step of aging evolution:
-        1) select parents
-        2) generate child (skip if duplicate)
-        3) evaluate child
-        4) update population FIFO
+        Execute one step of aging evolution.
+
+        Mechanism:
+        1. Select parents via tournament.
+        2. Generate child (mutation/crossover).
+        3. Evaluate child (NTK).
+        4. Add child to population and remove oldest individual (FIFO).
+
+        Returns:
+            bool: True if step completed successfully.
         """
         child = None
         while True:
@@ -188,7 +215,11 @@ class AgingEvolutionNAS:
         return True
 
     def run_search(self):
-        """Main loop for aging evolution search."""
+        """
+        Run the main search loop for `config.MAX_GEN` iterations.
+        
+        Evaluates individuals using NTK proxy and saves checkpoints/history.
+        """
         logger.info(f"Starting Aging Evolution Search for {self.max_gen} steps...")
         search_start_time = time.time()
 
@@ -201,7 +232,7 @@ class AgingEvolutionNAS:
                 self.save_checkpoint()
 
         self.search_time = time.time() - search_start_time
-        logger.info(f"Search completed. Search time: {self._format_time(self.search_time)}")
+        logger.info(f"Search completed. Search time: {format_time(self.search_time)}")
         logger.info(
             f"Search statistics: {len(self.history)} valid individuals evaluated, "
             f"{self.duplicate_count} duplicates skipped, {len(self.seen_encodings)} unique architectures"
@@ -211,7 +242,17 @@ class AgingEvolutionNAS:
         self.plot_ntk_curve()
 
     def run_screening_and_training(self):
-        """Multi-stage screening and final training."""
+        """
+        Execute the multi-stage training pipeline.
+        
+        1. Select top N1 candidates based on NTK history.
+        2. Short training (few epochs) for these candidates.
+        3. Select top N2 candidates based on short training accuracy.
+        4. Full training for the best candidates.
+        
+        Returns:
+            Optional[Individual]: The best fully trained individual, or None.
+        """
         logger.info("Starting Screening and Training Phase...")
 
         unique_history = {}
@@ -257,7 +298,7 @@ class AgingEvolutionNAS:
             short_results.append(ind)
 
         self.short_train_time = time.time() - short_train_start_time
-        logger.info(f"Short Training completed. Time: {self._format_time(self.short_train_time)}")
+        logger.info(f"Short Training completed. Time: {format_time(self.short_train_time)}")
 
         short_results.sort(
             key=lambda x: x.quick_score if x.quick_score else float("-inf"),
@@ -295,7 +336,7 @@ class AgingEvolutionNAS:
             final_results.append(result)
 
         self.full_train_time = time.time() - full_train_start_time
-        logger.info(f"Full Training completed. Time: {self._format_time(self.full_train_time)}")
+        logger.info(f"Full Training completed. Time: {format_time(self.full_train_time)}")
 
         self._save_time_stats()
 
@@ -516,17 +557,6 @@ class AgingEvolutionNAS:
             f"Mean={sum(ntk_values)/len(ntk_values):.4f}, Worst={max(ntk_values):.4f}"
         )
 
-    def _format_time(self, seconds: float) -> str:
-        """Format seconds into a readable time string."""
-        if seconds < 60:
-            return f"{seconds:.2f}s"
-        if seconds < 3600:
-            minutes = seconds / 60
-            return f"{minutes:.2f}min ({seconds:.0f}s)"
-        hours = seconds / 3600
-        minutes = (seconds % 3600) / 60
-        return f"{hours:.2f}h ({minutes:.0f}min)"
-
     def _save_time_stats(self, filepath: str = None):
         """Save timing stats to JSON and log summary."""
         total_time = self.search_time + self.short_train_time + self.full_train_time
@@ -534,12 +564,12 @@ class AgingEvolutionNAS:
         self.time_stats = {
             "search_phase": {
                 "time_seconds": self.search_time,
-                "time_formatted": self._format_time(self.search_time),
+                "time_formatted": format_time(self.search_time),
                 "description": f"Search phase (NTK eval {self.max_gen} individuals)",
             },
             "short_training_phase": {
                 "time_seconds": self.short_train_time,
-                "time_formatted": self._format_time(self.short_train_time),
+                "time_formatted": format_time(self.short_train_time),
                 "description": (
                     f"Short training (Top {config.HISTORY_TOP_N1} models, "
                     f"{config.SHORT_TRAIN_EPOCHS} epochs)"
@@ -547,7 +577,7 @@ class AgingEvolutionNAS:
             },
             "full_training_phase": {
                 "time_seconds": self.full_train_time,
-                "time_formatted": self._format_time(self.full_train_time),
+                "time_formatted": format_time(self.full_train_time),
                 "description": (
                     f"Full training (Top {config.HISTORY_TOP_N2} models, "
                     f"{config.FULL_TRAIN_EPOCHS} epochs)"
@@ -555,7 +585,7 @@ class AgingEvolutionNAS:
             },
             "total": {
                 "time_seconds": total_time,
-                "time_formatted": self._format_time(total_time),
+                "time_formatted": format_time(total_time),
                 "description": "Total runtime",
             },
         }
@@ -571,10 +601,10 @@ class AgingEvolutionNAS:
         logger.info("=" * 60)
         logger.info("Timing Summary")
         logger.info("=" * 60)
-        logger.info(f"Search phase:     {self._format_time(self.search_time)}")
-        logger.info(f"Short training:   {self._format_time(self.short_train_time)}")
-        logger.info(f"Full training:    {self._format_time(self.full_train_time)}")
+        logger.info(f"Search phase:     {format_time(self.search_time)}")
+        logger.info(f"Short training:   {format_time(self.short_train_time)}")
+        logger.info(f"Full training:    {format_time(self.full_train_time)}")
         logger.info("-" * 60)
-        logger.info(f"Total:            {self._format_time(total_time)}")
+        logger.info(f"Total:            {format_time(total_time)}")
         logger.info("=" * 60)
         logger.info(f"Time stats saved to {filepath}")

@@ -11,15 +11,15 @@ import time
 import random
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
 from collections import deque
 from copy import deepcopy
 from typing import List, Tuple, Dict, Optional
-from scipy.spatial import ConvexHull
 from datetime import datetime
 
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.plotting import plot_pareto_comparison
 
 from configuration.config import config
 from core.encoding import Encoder, Individual
@@ -30,9 +30,6 @@ from models.network import NetworkBuilder
 from utils.generation import generate_valid_child
 from utils.logger import logger
 from utils.constraints import update_param_bounds_for_dataset
-
-rcParams['font.family'] = 'DejaVu Sans'
-rcParams['axes.unicode_minus'] = True
 
 
 class ModelInfo:
@@ -424,100 +421,6 @@ class RandomSearchAlgorithm:
         return self.final_models
 
 
-def plot_pareto_comparison(three_stage_models: List[ModelInfo],
-                           traditional_models: List[ModelInfo],
-                           random_models: List[ModelInfo],
-                           output_dir: str = None,
-                           show_plot: bool = True):
-    
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    def extract_data(models: List[ModelInfo]):
-        params = [m.param_count for m in models if m.param_count > 0 and m.accuracy > 0]
-        accs = [m.accuracy for m in models if m.param_count > 0 and m.accuracy > 0]
-        return np.array(params), np.array(accs)
-    
-    ts_params, ts_accs = extract_data(three_stage_models)
-    te_params, te_accs = extract_data(traditional_models)
-    rs_params, rs_accs = extract_data(random_models)
-    
-    colors = {
-        'three_stage': '#D62728',
-        'traditional': '#1F77B4',
-        'random': '#7F7F7F'
-    }
-    
-    alpha_hull = 0.25
-    alpha_scatter = 0.8
-    
-    def plot_with_hull(params, accs, color, label, marker='o'):
-        if len(params) < 3:
-            ax.scatter(params, accs, c=color, label=label, s=80, 
-                      alpha=alpha_scatter, edgecolors='white', linewidths=1, marker=marker)
-            return
-        
-        ax.scatter(params, accs, c=color, label=label, s=80, 
-                  alpha=alpha_scatter, edgecolors='white', linewidths=1, marker=marker)
-        
-        try:
-            points = np.column_stack([params, accs])
-            hull = ConvexHull(points)
-            
-            hull_points = points[hull.vertices]
-            hull_points = np.vstack([hull_points, hull_points[0]])
-            
-            ax.fill(hull_points[:, 0], hull_points[:, 1], 
-                   color=color, alpha=alpha_hull)
-            ax.plot(hull_points[:, 0], hull_points[:, 1], 
-                   color=color, linewidth=2, alpha=0.7)
-        except Exception as e:
-            logger.warning(f"Cannot draw convex hull: {e}")
-    
-    if len(ts_params) > 0:
-        plot_with_hull(ts_params, ts_accs, colors['three_stage'], 'Three-Stage EA', 'o')
-    if len(te_params) > 0:
-        plot_with_hull(te_params, te_accs, colors['traditional'], 'Traditional EA', 's')
-    if len(rs_params) > 0:
-        plot_with_hull(rs_params, rs_accs, colors['random'], 'Random Search', '^')
-    
-    ax.set_xlabel('Parameters (M)', fontsize=14)
-    ax.set_ylabel('Validation Accuracy (%)', fontsize=14)
-    ax.set_title('Comparison of Three Search Algorithms', fontsize=14, fontweight='bold')
-    ax.legend(loc='lower right', fontsize=12)
-    ax.grid(True, alpha=0.3)
-    
-    stats_text = []
-    if len(ts_accs) > 0:
-        stats_text.append(f"Three-Stage EA: Avg Acc={np.mean(ts_accs):.2f}%, Avg Params={np.mean(ts_params):.2f}M")
-    if len(te_accs) > 0:
-        stats_text.append(f"Traditional EA: Avg Acc={np.mean(te_accs):.2f}%, Avg Params={np.mean(te_params):.2f}M")
-    if len(rs_accs) > 0:
-        stats_text.append(f"Random Search: Avg Acc={np.mean(rs_accs):.2f}%, Avg Params={np.mean(rs_params):.2f}M")
-    
-    stats_str = '\n'.join(stats_text)
-    ax.text(0.02, 0.98, stats_str, transform=ax.transAxes, fontsize=10,
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-    
-    plt.tight_layout()
-    
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = os.path.join(output_dir, f'algorithm_comparison_{timestamp}.png')
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        logger.info(f"Chart saved to: {output_path}")
-        
-        # Also save PDF format
-        pdf_path = os.path.join(output_dir, f'algorithm_comparison_{timestamp}.pdf')
-        plt.savefig(pdf_path, dpi=150, bbox_inches='tight')
-        logger.info(f"PDF saved to: {pdf_path}")
-    
-    if show_plot:
-        plt.show()
-    
-    plt.close()
-
-
 def save_experiment_results(three_stage_models: List[ModelInfo],
                             traditional_models: List[ModelInfo],
                             random_models: List[ModelInfo],
@@ -799,18 +702,22 @@ def main():
         args.ts_ntk_evals = 50
         args.ts_pop_size = 10
         args.ts_top_n1 = 5
-        args.ts_top_n2 = 3
-        args.ts_short_epochs = 5
-        args.te_evals = 20
+        args.ts_top_n2 = 2
+        args.ts_short_epochs = 1
+        
+        args.te_evals = 10
         args.te_pop_size = 5
-        args.te_top_n = 3
-        args.te_search_epochs = 5
-        args.rs_samples = 5
-        args.full_epochs = 10
-        logger.info("Using quick test mode")
+        args.te_top_n = 2
+        args.te_search_epochs = 1
+        
+        args.rs_samples = 4
+        
+        args.full_epochs = 1
+        
+        logger.info("Quick test mode enabled: Reduced parameters significantly")
 
     run_experiment(args)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

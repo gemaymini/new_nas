@@ -18,6 +18,21 @@ class BlockParams:
                  pool_stride: int, has_senet: int, activation_type: int = 0,
                  dropout_rate: float = 0.0, skip_type: int = 0, kernel_size: int = 3,
                  expansion: int = 2):
+        """
+        Initialize block parameters.
+
+        Args:
+            out_channels (int): Number of output channels.
+            groups (int): Number of groups for convolution.
+            pool_type (int): 0 for MaxPool, 1 for AvgPool.
+            pool_stride (int): Stride for pooling (1 or 2).
+            has_senet (int): 1 if SE block is used, 0 otherwise.
+            activation_type (int): 0 for ReLU, 1 for SiLU.
+            dropout_rate (float): Dropout probability.
+            skip_type (int): 0 for add, 1 for concat, 2 for none.
+            kernel_size (int): Convolution kernel size (3 or 5).
+            expansion (int): Application of expansion factor on mid_channels.
+        """
         self.out_channels = out_channels
         self.groups = groups
         self.pool_type = pool_type
@@ -30,6 +45,12 @@ class BlockParams:
         self.kernel_size = kernel_size          # Kernel size: 3 or 5
 
     def to_list(self) -> List:
+        """
+        Serialize block parameters to a list of integers.
+
+        Returns:
+            List: Flattened parameters.
+        """
         dropout_encoded = int(self.dropout_rate * 100)
         return [self.out_channels, self.groups, self.pool_type,
                 self.pool_stride, self.has_senet, self.activation_type,
@@ -37,6 +58,15 @@ class BlockParams:
 
     @classmethod
     def from_list(cls, params: List) -> "BlockParams":
+        """
+        Deserialize block parameters from a list.
+
+        Args:
+            params (List): Flattened parameters.
+
+        Returns:
+            BlockParams: Reconstructed object.
+        """
         # Default expansion for legacy encodings that predate this field.
         dropout_rate = params[6] / 100.0
 
@@ -57,6 +87,12 @@ class Individual:
     """Candidate architecture representation."""
 
     def __init__(self, encoding: Optional[List[int]] = None):
+        """
+        Initialize an individual.
+
+        Args:
+            encoding (List[int], optional): Genetic encoding of the architecture.
+        """
         self.id = None
         self.encoding = encoding if encoding is not None else []
         self.quick_score = 0
@@ -64,6 +100,12 @@ class Individual:
         self.op_history = []
 
     def copy(self) -> "Individual":
+        """
+        Create a deep copy of the individual.
+
+        Returns:
+            Individual: A new instance with copied data.
+        """
         new_ind = Individual(copy.deepcopy(self.encoding))
         new_ind.fitness = self.fitness
         new_ind.quick_score = self.quick_score
@@ -79,6 +121,18 @@ class Encoder:
 
     @staticmethod
     def decode(encoding: List[int]) -> Tuple[int, List[int], List[List[BlockParams]]]:
+        """
+        Decode the integer encoding into structural components.
+
+        Args:
+            encoding (List[int]): The architecture encoding.
+
+        Returns:
+            Tuple[int, List[int], List[List[BlockParams]]]:
+                - Number of units
+                - List of block counts per unit
+                - Nested list of BlockParams for each block.
+        """
         if not encoding:
             raise ValueError("Encoding is empty")
 
@@ -104,6 +158,17 @@ class Encoder:
     @staticmethod
     def encode(unit_num: int, block_nums: List[int],
                block_params_list: List[List[BlockParams]]) -> List[int]:
+        """
+        Encode structural components into a flat integer list.
+
+        Args:
+            unit_num (int): Number of units.
+            block_nums (List[int]): Number of blocks per unit.
+            block_params_list (List[List[BlockParams]]): Block parameters.
+
+        Returns:
+            List[int]: Flattened encoding.
+        """
         encoding = [unit_num]
         encoding.extend(block_nums)
 
@@ -115,6 +180,15 @@ class Encoder:
 
     @staticmethod
     def validate_encoding(encoding: List[int]) -> bool:
+        """
+        Check if an encoding is valid within the search space constraints.
+
+        Args:
+            encoding (List[int]): The encoding to validate.
+
+        Returns:
+            bool: True if valid, False otherwise.
+        """
         try:
             unit_num, block_nums, block_params_list = Encoder.decode(encoding)
 
@@ -171,7 +245,16 @@ class Encoder:
 
     @staticmethod
     def validate_channel_count(encoding: List[int], init_channels: int = None) -> bool:
-        """Validate that channel counts stay within configured limits."""
+        """
+        Validate that channel counts stay within configured limits.
+        
+        Args:
+            encoding (List[int]): The encoding to check.
+            init_channels (int, optional): Initial number of channels.
+
+        Returns:
+            bool: True if channel counts satisfy limits.
+        """
         if init_channels is None:
             init_channels = config.INIT_CONV_OUT_CHANNELS
 
@@ -197,6 +280,16 @@ class Encoder:
 
     @staticmethod
     def validate_feature_size(encoding: List[int], input_size: int = None) -> bool:
+        """
+        Ensure feature map size does not become too small (e.g., < 1x1).
+
+        Args:
+            encoding (List[int]): The encoding to check.
+            input_size (int, optional): Input image size.
+
+        Returns:
+            bool: True if feature size remains valid.
+        """
         if input_size is None:
             input_size = config.INPUT_IMAGE_SIZE
 
@@ -216,6 +309,15 @@ class Encoder:
 
     @staticmethod
     def get_max_downsampling(input_size: int = None) -> int:
+        """
+        Calculate maximum allowable downsampling operations.
+
+        Args:
+            input_size (int, optional): Input image size.
+
+        Returns:
+            int: Max number of downsample steps.
+        """
         if input_size is None:
             input_size = config.INPUT_IMAGE_SIZE
         import math
@@ -223,6 +325,12 @@ class Encoder:
 
     @staticmethod
     def print_architecture(encoding: List[int]):
+        """
+        Print a human-readable summary of the architecture.
+
+        Args:
+            encoding (List[int]): The architecture encoding.
+        """
         unit_num, block_nums, block_params_list = Encoder.decode(encoding)
 
         # Best-effort parameter count for display.

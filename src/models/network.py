@@ -10,7 +10,15 @@ from core.encoding import Encoder, BlockParams
 
 
 def get_activation(activation_type: int) -> nn.Module:
-    """Return the activation module for the given type."""
+    """
+    Return the activation module for the given type.
+
+    Args:
+        activation_type (int): 0 for ReLU, 1 for SiLU.
+
+    Returns:
+        nn.Module: Activation layer.
+    """
     if activation_type == 0:
         return nn.ReLU(inplace=True)
     if activation_type == 1:
@@ -19,6 +27,9 @@ def get_activation(activation_type: int) -> nn.Module:
 
 
 class SEBlock(nn.Module):
+    """
+    Squeeze-and-Excitation block.
+    """
     def __init__(self, channels: int, reduction: int = 16):
         super(SEBlock, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
@@ -30,6 +41,9 @@ class SEBlock(nn.Module):
         )
 
     def forward(self, x):
+        """
+        Forward pass of SE block.
+        """
         b, c, _, _ = x.size()
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
@@ -37,6 +51,9 @@ class SEBlock(nn.Module):
 
 
 class ConvUnit(nn.Module):
+    """
+    Standard convolution block (Conv-BN-ReLU).
+    """
     def __init__(self, in_channels: int, out_channels: int,
                  kernel_size: int = 3, stride: int = 1, padding: int = 1):
         super(ConvUnit, self).__init__()
@@ -53,7 +70,17 @@ class ConvUnit(nn.Module):
 
 
 class RegBlock(nn.Module):
+    """
+    Regularized evolution block (MBConv-like structure).
+    """
     def __init__(self, in_channels: int, block_params: BlockParams):
+        """
+        Initialize the block.
+
+        Args:
+            in_channels (int): Input channel count.
+            block_params (BlockParams): Hyperparameters for this block.
+        """
         super(RegBlock, self).__init__()
         self.in_channels = in_channels
         self.mid_channels = block_params.out_channels
@@ -164,6 +191,9 @@ class RegBlock(nn.Module):
 
 
 class RegUnit(nn.Module):
+    """
+    A unit composed of multiple RegBlocks.
+    """
     def __init__(self, in_channels: int, block_params_list: List[BlockParams]):
         super(RegUnit, self).__init__()
         self.blocks = nn.ModuleList()
@@ -186,6 +216,9 @@ class RegUnit(nn.Module):
 
 
 class SearchedNetwork(nn.Module):
+    """
+    The full neural network constructed from a genetic encoding.
+    """
     def __init__(self, encoding: List[int], input_channels: int = 3, num_classes: int = 10):
         super(SearchedNetwork, self).__init__()
 
@@ -227,6 +260,9 @@ class SearchedNetwork(nn.Module):
 
 
 class NetworkBuilder:
+    """
+    Helper to build SearchedNetwork instances from encodings or individuals.
+    """
     @staticmethod
     def build_from_encoding(encoding: List[int], input_channels: int = 3, num_classes: int = 10) -> SearchedNetwork:
         return SearchedNetwork(encoding, input_channels, num_classes)

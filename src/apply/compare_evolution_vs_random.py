@@ -21,11 +21,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from configuration.config import config
 from core.encoding import Encoder, Individual
 from core.search_space import population_initializer
-from search.mutation import mutation_operator, selection_operator, crossover_operator
+# from search.mutation import mutation_operator, selection_operator, crossover_operator # No longer needed here
 from engine.evaluator import fitness_evaluator, clear_gpu_memory
-from utils.generation import generate_valid_child
+# from utils.generation import generate_valid_child # No longer needed here
 from utils.logger import logger
 from utils.constraints import update_param_bounds_for_dataset
+from utils.plotting import plot_comparison
 
 
 class RandomSearch:
@@ -64,280 +65,49 @@ class RandomSearch:
         return self.history, self.best_fitness_curve, self.all_fitness_values
 
 
-class AgingEvolutionSearch:
-    
-    def __init__(self, max_evaluations: int, population_size: int = None):
-        self.max_evaluations = max_evaluations
-        self.population_size = population_size or config.POPULATION_SIZE
-        self.population = deque()
-        self.history: List[Individual] = []
-        self.best_fitness_curve: List[float] = []
-        self.all_fitness_values: List[float] = []
-        
-    def _select_parents(self) -> Tuple[Individual, Individual]:
-        current_pop_list = list(self.population)
-        parents = selection_operator.tournament_selection(
-            current_pop_list,
-            tournament_size=config.TOURNAMENT_SIZE,
-            num_winners=config.TOURNAMENT_WINNERS
-        )
-        if len(parents) < 2:
-            return parents[0], parents[0]
-        return parents[0], parents[1]
-    
-    def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        def repair_fn(child: Individual) -> Individual:
-            for _ in range(20):
-                candidate = mutation_operator.mutate(random.choice([parent1, parent2]))
-                if Encoder.validate_encoding(candidate.encoding):
-                    return candidate
-            return random.choice([parent1, parent2]).copy()
 
-        return generate_valid_child(
-            parent1=parent1,
-            parent2=parent2,
-            crossover_fn=crossover_operator.crossover,
-            mutation_fn=mutation_operator.mutate,
-            repair_fn=repair_fn,
-            resample_fn=population_initializer.create_valid_individual,
-            crossover_prob=config.PROB_CROSSOVER,
-            mutation_prob=config.PROB_MUTATION,
-            max_attempts=50,
-        )
+from search.evolution import AgingEvolutionNAS
+
+def run_evolution_phase(max_evaluations: int, population_size: int) -> Tuple[List[Individual], List[float], List[float]]:
+    """
+    Run the standard AgingEvolutionNAS and extract statistics for comparison.
+    """
+    # Configure global settings for the run
+    config.MAX_GEN = max_evaluations
+    config.POPULATION_SIZE = population_size
     
-    def run(self) -> Tuple[List[Individual], List[float], List[float]]:
-        logger.info(f"Starting Aging Evolution for {self.max_evaluations} evaluations...")
-        logger.info(f"Population size: {self.population_size}")
+    # Initialize and run
+    nas = AgingEvolutionNAS()
+    nas.run_search()
+    
+    # Extract data for plotting
+    history = nas.history
+    
+    # Reconstruct curves from ntk_history (format: step, id, ntk, encoding)
+    # Filter valid scores
+    all_fitness_values = []
+    best_fitness_curve = []
+    
+    current_best = float('inf')
+    
+    # We need to reconstruct the sequential list of fitness values to match the plotting format
+    
+    for entry in nas.ntk_history:
+        fitness = entry[2]
+        if fitness is None: 
+            fitness = 100000.0
+            
+        all_fitness_values.append(fitness)
         
-        best_fitness = float('inf')
-        eval_count = 0
+        if fitness < 100000:
+            if fitness < current_best:
+                current_best = fitness
         
-        logger.info("Initializing population...")
-        while len(self.population) < self.population_size and eval_count < self.max_evaluations:
-            ind = population_initializer.create_valid_individual()
-            ind.id = eval_count
-            fitness_evaluator.evaluate_individual(ind)
+        best_fitness_curve.append(current_best if current_best < float('inf') else 100000.0)
             
-            self.population.append(ind)
-            self.history.append(ind)
-            
-            current_fitness = ind.fitness if ind.fitness is not None else 100000
-            self.all_fitness_values.append(current_fitness)
-            
-            if ind.fitness is not None and ind.fitness < 100000:
-                best_fitness = min(best_fitness, ind.fitness)
-            
-            self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 100000)
-            eval_count += 1
-            
-            if eval_count % 10 == 0:
-                logger.info(f"Initialization [{eval_count}/{self.population_size}]")
-        
-        logger.info(f"Population initialized. Size: {len(self.population)}")
-        
-        while eval_count < self.max_evaluations:
-            parent1, parent2 = self._select_parents()
-            
-            child = self._generate_offspring(parent1, parent2)
-            child.id = eval_count
-            
-            fitness_evaluator.evaluate_individual(child)
-            
-            self.population.popleft()
-            self.population.append(child)
-            self.history.append(child)
-            
-            current_fitness = child.fitness if child.fitness is not None else 100000
-            self.all_fitness_values.append(current_fitness)
-            
-            if child.fitness is not None and child.fitness < 100000:
-                best_fitness = min(best_fitness, child.fitness)
-            
-            self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 100000)
-            eval_count += 1
-            
-            if eval_count % 20 == 0:
-                logger.info(f"Aging Evolution [{eval_count}/{self.max_evaluations}] Best NTK: {best_fitness:.4f}")
-                clear_gpu_memory()
-        
-        logger.info(f"Aging Evolution completed. Best NTK: {best_fitness:.4f}")
-        return self.history, self.best_fitness_curve, self.all_fitness_values
+    return history, best_fitness_curve, all_fitness_values
 
 
-def plot_comparison(evolution_curve: List[float], random_curve: List[float], 
-                    evolution_all_ntk: List[float], random_all_ntk: List[float],
-                    output_path: str, title: str = None):
-    fig, axes = plt.subplots(4, 2, figsize=(14, 20))
-    
-    if title is None:
-        title = f'Aging Evolution vs Random Search (N={len(evolution_curve)})'
-    fig.suptitle(title, fontsize=14, fontweight='bold')
-    
-    steps = list(range(1, len(evolution_curve) + 1))
-    
-    evo_valid_vals = [v for v in evolution_all_ntk if v < 100000]
-    rand_valid_vals = [v for v in random_all_ntk if v < 100000]
-    
-    ax1 = axes[0, 0]
-    ax1.semilogy(steps, evolution_curve, 'b-', linewidth=2, label='Aging Evolution')
-    ax1.semilogy(steps, random_curve, 'r-', linewidth=2, label='Random Search')
-    ax1.set_xlabel('Evaluation Count')
-    ax1.set_ylabel('Best NTK (log scale)')
-    ax1.set_title('1. Cumulative Best NTK (Lower is Better)')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3, which='both')
-    ax1.annotate(f'{evolution_curve[-1]:.1f}', xy=(len(steps), evolution_curve[-1]), 
-                 xytext=(5, 0), textcoords='offset points', fontsize=9, color='blue')
-    ax1.annotate(f'{random_curve[-1]:.1f}', xy=(len(steps), random_curve[-1]), 
-                 xytext=(5, 0), textcoords='offset points', fontsize=9, color='red')
-    
-    ax2 = axes[0, 1]
-    evo_valid = [(i+1, v) for i, v in enumerate(evolution_all_ntk) if v < 100000]
-    rand_valid = [(i+1, v) for i, v in enumerate(random_all_ntk) if v < 100000]
-    if evo_valid:
-        evo_steps, evo_vals = zip(*evo_valid)
-        ax2.scatter(evo_steps, evo_vals, alpha=0.6, s=20, c='blue', label='Aging Evolution', edgecolors='none')
-    if rand_valid:
-        rand_steps, rand_vals = zip(*rand_valid)
-        ax2.scatter(rand_steps, rand_vals, alpha=0.6, s=20, c='red', label='Random Search', edgecolors='none')
-    ax2.set_yscale('log')
-    ax2.set_xlabel('Evaluation Count')
-    ax2.set_ylabel('Individual NTK Value (log scale)')
-    ax2.set_title('2. All Individual NTK Values (Scatter)')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3, which='both')
-    
-    ax3 = axes[1, 0]
-    color1, color2 = 'blue', 'red'
-    
-    line1, = ax3.plot(steps, evolution_curve, color=color1, linewidth=2, label='Aging Evolution')
-    ax3.set_xlabel('Evaluation Count')
-    ax3.set_ylabel('Aging Evolution Best NTK', color=color1)
-    ax3.tick_params(axis='y', labelcolor=color1)
-    ax3.set_ylim(min(evolution_curve) * 0.9, max(evolution_curve) * 1.1)
-    
-    ax3_twin = ax3.twinx()
-    line2, = ax3_twin.plot(steps, random_curve, color=color2, linewidth=2, label='Random Search')
-    ax3_twin.set_ylabel('Random Search Best NTK', color=color2)
-    ax3_twin.tick_params(axis='y', labelcolor=color2)
-    ax3_twin.set_ylim(min(random_curve) * 0.9, max(random_curve) * 1.1)
-    
-    ax3.set_title('3. Cumulative Best NTK (Dual Y-Axis)')
-    ax3.legend([line1, line2], ['Aging Evolution', 'Random Search'], loc='upper right')
-    ax3.grid(True, alpha=0.3)
-    
-    ax4 = axes[1, 1]
-    all_valid = evo_valid_vals + rand_valid_vals
-    if all_valid:
-        log_min = np.log10(max(min(all_valid), 1))
-        log_max = np.log10(max(all_valid))
-        bins = np.logspace(log_min, log_max, 25)
-        ax4.hist(evo_valid_vals, bins=bins, alpha=0.6, color='blue', label='Aging Evolution', edgecolor='black')
-        ax4.hist(rand_valid_vals, bins=bins, alpha=0.6, color='red', label='Random Search', edgecolor='black')
-        ax4.set_xscale('log')
-    ax4.set_xlabel('NTK Condition Number (log scale)')
-    ax4.set_ylabel('Count')
-    ax4.set_title('4. NTK Distribution Histogram')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    
-    ax5 = axes[2, 0]
-    evo_improvement = [(evolution_curve[0] - v) / evolution_curve[0] * 100 for v in evolution_curve]
-    rand_improvement = [(random_curve[0] - v) / random_curve[0] * 100 for v in random_curve]
-    ax5.plot(steps, evo_improvement, 'b-', linewidth=2, label='Aging Evolution')
-    ax5.plot(steps, rand_improvement, 'r-', linewidth=2, label='Random Search')
-    ax5.set_xlabel('Evaluation Count')
-    ax5.set_ylabel('Improvement from Initial (%)')
-    ax5.set_title('5. Relative Improvement Over Time')
-    ax5.legend()
-    ax5.grid(True, alpha=0.3)
-    ax5.annotate(f'{evo_improvement[-1]:.1f}%', xy=(len(steps), evo_improvement[-1]), 
-                 xytext=(5, 0), textcoords='offset points', fontsize=9, color='blue')
-    ax5.annotate(f'{rand_improvement[-1]:.1f}%', xy=(len(steps), rand_improvement[-1]), 
-                 xytext=(5, 5), textcoords='offset points', fontsize=9, color='red')
-    
-    ax6 = axes[2, 1]
-    window_size = max(5, len(evolution_all_ntk) // 20)
-    
-    def moving_average_continuous(data, window):
-        cleaned = np.array([v if v < 100000 else np.nan for v in data], dtype=float)
-        
-        valid_mask = ~np.isnan(cleaned)
-        if np.sum(valid_mask) >= 2:
-            indices = np.arange(len(cleaned))
-            cleaned = np.interp(indices, indices[valid_mask], cleaned[valid_mask])
-        
-        result = np.convolve(cleaned, np.ones(window)/window, mode='valid')
-        padding = [np.mean(cleaned[:i+1]) for i in range(window-1)]
-        return padding + list(result)
-    
-    evo_ma = moving_average_continuous(evolution_all_ntk, window_size)
-    rand_ma = moving_average_continuous(random_all_ntk, window_size)
-    
-    ax6.semilogy(steps, evo_ma, 'b-', linewidth=2, label=f'Aging Evolution (MA={window_size})')
-    ax6.semilogy(steps, rand_ma, 'r-', linewidth=2, label=f'Random Search (MA={window_size})')
-    ax6.set_xlabel('Evaluation Count')
-    ax6.set_ylabel('Moving Average NTK (log scale)')
-    ax6.set_title('6. Moving Average NTK')
-    ax6.legend()
-    ax6.grid(True, alpha=0.3, which='both')
-    
-    ax7 = axes[3, 0]
-    evo_line = np.array([v if v < 100000 else np.nan for v in evolution_all_ntk], dtype=float)
-    rand_line = np.array([v if v < 100000 else np.nan for v in random_all_ntk], dtype=float)
-    
-    for arr in [evo_line, rand_line]:
-        valid_mask = ~np.isnan(arr)
-        if np.sum(valid_mask) >= 2:
-            indices = np.arange(len(arr))
-            arr[:] = np.interp(indices, indices[valid_mask], arr[valid_mask])
-    
-    ax7.semilogy(steps, evo_line, 'b-', linewidth=1, alpha=0.8, label='Aging Evolution')
-    ax7.semilogy(steps, rand_line, 'r-', linewidth=1, alpha=0.8, label='Random Search')
-    ax7.set_xlabel('Evaluation Count')
-    ax7.set_ylabel('NTK Condition Number (log)')
-    ax7.set_title('7. Sequential NTK Line Plot')
-    ax7.legend()
-    ax7.grid(True, alpha=0.3, which='both')
-    
-    ax8 = axes[3, 1]
-    ax8.axis('off')
-    
-    evo_valid = [v for v in evolution_all_ntk if v < 100000]
-    rand_valid = [v for v in random_all_ntk if v < 100000]
-    
-    table_data = [
-        ['Metric', 'Aging Evolution', 'Random Search'],
-        ['Best NTK', f'{min(evo_valid):.2f}' if evo_valid else 'N/A', 
-         f'{min(rand_valid):.2f}' if rand_valid else 'N/A'],
-        ['Mean NTK', f'{np.mean(evo_valid):.2f}' if evo_valid else 'N/A',
-         f'{np.mean(rand_valid):.2f}' if rand_valid else 'N/A'],
-        ['Std NTK', f'{np.std(evo_valid):.2f}' if evo_valid else 'N/A',
-         f'{np.std(rand_valid):.2f}' if rand_valid else 'N/A'],
-        ['Median NTK', f'{np.median(evo_valid):.2f}' if evo_valid else 'N/A',
-         f'{np.median(rand_valid):.2f}' if rand_valid else 'N/A'],
-        ['Valid Count', f'{len(evo_valid)}/{len(evolution_all_ntk)}',
-         f'{len(rand_valid)}/{len(random_all_ntk)}'],
-        ['Final Best', f'{evolution_curve[-1]:.2f}', f'{random_curve[-1]:.2f}'],
-    ]
-    
-    table = ax8.table(cellText=table_data, loc='center', cellLoc='center',
-                      colWidths=[0.35, 0.35, 0.35])
-    table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    table.scale(1.2, 1.8)
-    
-    for i in range(3):
-        table[(0, i)].set_facecolor('#4472C4')
-        table[(0, i)].set_text_props(color='white', fontweight='bold')
-    
-    ax8.set_title('8. Summary Statistics')
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    logger.info(f"Comparison plot saved to {output_path}")
 
 
 def compute_statistics(evolution_history: List[Individual], random_history: List[Individual],
@@ -419,9 +189,12 @@ def run_experiment(max_evaluations: int, population_size: int, seed: int = None,
     logger.info("\n" + "=" * 40)
     logger.info("Phase 1: Running Aging Evolution")
     logger.info("=" * 40)
+    logger.info("=" * 40)
     start_time = time.time()
-    evolution_search = AgingEvolutionSearch(max_evaluations, population_size)
-    evolution_history, evolution_curve, evolution_all_ntk = evolution_search.run()
+    
+    # Use the refactored evolution phase runner
+    evolution_history, evolution_curve, evolution_all_ntk = run_evolution_phase(max_evaluations, population_size)
+    
     evolution_time = time.time() - start_time
     logger.info(f"Aging Evolution time: {evolution_time:.2f}s")
     

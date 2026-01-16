@@ -30,7 +30,9 @@ class OperationLogger:
 
 
 class Logger:
-    """Main logger with console and optional file outputs."""
+    """
+    Main logger class for handling console and file logging.
+    """
 
     def __init__(self):
         self.logger = logging.getLogger("NAS")
@@ -107,6 +109,12 @@ class Logger:
         self.debug(msg)
 
     def log_operation(self, record: dict):
+        """
+        Log an operation to the console and the operation history file.
+
+        Args:
+            record (dict): Map of operation details.
+        """
         step = record.get("step")
         child_id = record.get("child_id")
         fitness = record.get("fitness")
@@ -118,7 +126,9 @@ class Logger:
 
 
 class TBLogger:
-    """TensorBoard writer wrapper."""
+    """
+    TensorBoard writer wrapper.
+    """
 
     def __init__(self):
         self.writer = None

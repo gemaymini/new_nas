@@ -13,81 +13,45 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.encoding import Individual
 from models.network import NetworkBuilder
+from utils.checkpoint import load_checkpoint, extract_encoding_from_checkpoint, extract_state_dict
 
-CIFAR10_CLASSES = (
-    'plane', 'car', 'bird', 'cat', 'deer', 
-    'dog', 'frog', 'horse', 'ship', 'truck'
-)
-
-CIFAR100_CLASSES = (
-    'apple', 'aquarium_fish', 'baby', 'bear', 'beaver', 'bed', 'bee', 'beetle', 
-    'bicycle', 'bottle', 'bowl', 'boy', 'bridge', 'bus', 'butterfly', 'camel', 
-    'can', 'castle', 'caterpillar', 'cattle', 'chair', 'chimpanzee', 'clock', 
-    'cloud', 'cockroach', 'couch', 'crab', 'crocodile', 'cup', 'dinosaur', 
-    'dolphin', 'elephant', 'flatfish', 'forest', 'fox', 'girl', 'hamster', 
-    'house', 'kangaroo', 'keyboard', 'lamp', 'lawn_mower', 'leopard', 'lion', 
-    'lizard', 'lobster', 'man', 'maple_tree', 'motorcycle', 'mountain', 'mouse', 
-    'mushroom', 'oak_tree', 'orange', 'orchid', 'otter', 'palm_tree', 'pear', 
-    'pickup_truck', 'pine_tree', 'plain', 'plate', 'poppy', 'porcupine', 
-    'possum', 'rabbit', 'raccoon', 'ray', 'road', 'rocket', 'rose', 
-    'sea', 'seal', 'shark', 'shrew', 'skunk', 'skyscraper', 'snail', 'snake', 
-    'spider', 'squirrel', 'streetcar', 'sunflower', 'sweet_pepper', 'table', 
-    'tank', 'telephone', 'television', 'tiger', 'tractor', 'train', 'trout', 
-    'tulip', 'turtle', 'wardrobe', 'whale', 'willow_tree', 'wolf', 'woman', 
-    'worm'
-)
+from utils.common import CIFAR10_CLASSES, CIFAR100_CLASSES
 
 import argparse
 
 def predict_image(model_path: str, image_path: str, encoding_str: str = None, device: str = 'cpu'):
-    if not os.path.exists(model_path):
-        print(f"ERROR: model file not found: {model_path}")
-        return
     if not os.path.exists(image_path):
         print(f"ERROR: image file not found: {image_path}")
         return
 
     print(f"INFO: loading_model={model_path}")
     try:
-        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = load_checkpoint(model_path, device=device)
     except Exception as e:
         print(f"ERROR: failed to load checkpoint: {e}")
         return
 
-    encoding = None
-    state_dict = None
-    
-    if isinstance(checkpoint, dict) and 'encoding' in checkpoint:
-        encoding = checkpoint['encoding']
-        state_dict = checkpoint['state_dict']
-        acc = checkpoint.get('accuracy', 'N/A')
-        print(f"INFO: checkpoint_accuracy={acc}")
-    elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-        state_dict = checkpoint['state_dict']
-        print("WARN: checkpoint only contains state_dict")
-    elif isinstance(checkpoint, dict) and 'fc.weight' in checkpoint:
-        state_dict = checkpoint
-        print("WARN: checkpoint is raw state_dict")
-    else:
-        print("ERROR: unknown checkpoint format")
+    try:
+        encoding = extract_encoding_from_checkpoint(checkpoint, encoding_str)
+        if encoding_str and encoding:
+             print(f"INFO: using_encoding={encoding}")
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        print("INFO: usage_example=python src/apply/predict.py model.pth image.jpg --encoding \"[3, 2, 2, 2, ...]\"")
         return
 
-    if encoding is None:
-        if encoding_str:
-            try:
-                import ast
-                encoding = ast.literal_eval(encoding_str)
-                print(f"INFO: using_provided_encoding={encoding}")
-            except Exception as e:
-                print(f"ERROR: failed to parse provided encoding: {e}")
-                return
-        else:
-            print("ERROR: checkpoint missing encoding; provide --encoding")
-            print("INFO: usage_example=python src/apply/predict.py model.pth image.jpg --encoding \"[3, 2, 2, 2, ...]\"")
-            return
+    try:
+        state_dict = extract_state_dict(checkpoint)
+    except ValueError:
+        print("WARN: checkpoint might be raw state dict or unrecognized format")
+        state_dict = checkpoint
 
-
+    if isinstance(checkpoint, dict):
+        acc = checkpoint.get('accuracy', 'N/A')
+        print(f"INFO: checkpoint_accuracy={acc}")
+        
     num_classes = 10 # Default
+    # ... heuristics to determine num_classes from state_dict keys ...
     if 'fc.weight' in state_dict:
         num_classes = state_dict['fc.weight'].shape[0]
         print(f"INFO: num_classes_detected={num_classes} source=fc")

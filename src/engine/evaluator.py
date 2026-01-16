@@ -27,6 +27,9 @@ def clear_gpu_memory():
 
 
 class NTKEvaluator:
+    """
+    Evaluator using Neural Tangent Kernel (NTK) condition number as a zero-cost proxy.
+    """
     def __init__(
         self,
         input_size: Tuple[int, int, int] = None,
@@ -37,6 +40,18 @@ class NTKEvaluator:
         num_batch: int = 1,
         dataset: str = None,
     ):
+        """
+        Initialize the NTK Evaluator.
+
+        Args:
+            input_size (Tuple[int, int, int], optional): Input dimensions (channels, H, W).
+            num_classes (int, optional): Number of output classes.
+            batch_size (int, optional): Batch size for NTK computation.
+            device (str, optional): Computation device ('cuda' or 'cpu').
+            recalbn (int): Number of batches for BatchNorm recalibration (0 to disable).
+            num_batch (int): Number of batches to use for NTK calculation.
+            dataset (str, optional): Dataset name.
+        """
         self.input_size = input_size or config.NTK_INPUT_SIZE
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
@@ -55,7 +70,15 @@ class NTKEvaluator:
         )
 
     def recal_bn(self, network: nn.Module, xloader, recal_batches: int, device):
-        """Reset BN stats and recompute over a few batches."""
+        """
+        Reset BN stats and recompute over a few batches.
+
+        Args:
+            network (nn.Module): The model to recalibrate.
+            xloader: Data loader.
+            recal_batches (int): Number of batches to use.
+            device: Torch device.
+        """
         for m in network.modules():
             if isinstance(m, torch.nn.BatchNorm2d):
                 m.running_mean.data.fill_(0)
@@ -79,7 +102,18 @@ class NTKEvaluator:
         num_batch: int = -1,
         train_mode: bool = True,
     ) -> float:
-        """Compute NTK condition number for a single network."""
+        """
+        Compute NTK condition number for a single network.
+
+        Args:
+            network (nn.Module): The neural network.
+            xloader: Data loader.
+            num_batch (int): Limit number of batches (-1 for default from init).
+            train_mode (bool): Whether to set model to train mode.
+
+        Returns:
+            float: The NTK condition number (lower is generally better).
+        """
         device = torch.device(self.device)
         if train_mode:
             network.train()
@@ -140,7 +174,17 @@ class NTKEvaluator:
         return cond
 
     def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
-        """Compute NTK score by averaging multiple runs."""
+        """
+        Compute NTK score by averaging multiple runs.
+        
+        Args:
+            network (nn.Module): The model.
+            param_count (int, optional): Parameter count (unused in calculation, logged/checked elsewhere).
+            num_runs (int): Number of independent NTK calculations to average.
+
+        Returns:
+            float: Averaged NTK condition number.
+        """
         try:
             network = network.to(self.device)
 
@@ -173,18 +217,9 @@ class NTKEvaluator:
                 if current_param_count is not None:
                     ok, reason = check_param_bounds(current_param_count)
                     if not ok:
-                        attempts += 1
-                        if attempts > 10:
-                            logger.error(f"Too many resample attempts for individual {individual.id}; returning penalty.")
-                            individual.fitness = 100000.0
-                            return individual.fitness
-                        logger.warning(f"Resampling individual {individual.id} for param bounds: {reason}")
-                        replacement = population_initializer.create_valid_individual()
-                        replacement.id = individual.id
-                        individual.encoding = replacement.encoding
-                        individual.op_history = getattr(replacement, "op_history", [])
-                        param_count = getattr(replacement, "param_count", None)
-                        continue
+                        logger.warning(f"Individual {individual.id} param bounds failed: {reason}")
+                        individual.fitness = 100000.0
+                        return individual.fitness
 
                 network = NetworkBuilder.build_from_individual(
                     individual,
@@ -196,20 +231,11 @@ class NTKEvaluator:
                     current_param_count = network.get_param_count()
                     ok, reason = check_param_bounds(current_param_count)
                     if not ok:
-                        attempts += 1
                         del network
                         clear_gpu_memory()
-                        if attempts > 10:
-                            logger.error(f"Too many resample attempts for individual {individual.id}; returning penalty.")
-                            individual.fitness = 100000.0
-                            return individual.fitness
-                        logger.warning(f"Resampling individual {individual.id} for param bounds: {reason}")
-                        replacement = population_initializer.create_valid_individual()
-                        replacement.id = individual.id
-                        individual.encoding = replacement.encoding
-                        individual.op_history = getattr(replacement, "op_history", [])
-                        param_count = getattr(replacement, "param_count", None)
-                        continue
+                        logger.warning(f"Individual {individual.id} param bounds failed after build: {reason}")
+                        individual.fitness = 100000.0
+                        return individual.fitness
 
                 # At this point param count is valid and network is built.
                 param_count = current_param_count
@@ -235,6 +261,9 @@ class NTKEvaluator:
 
 
 class FinalEvaluator:
+    """
+    Evaluator for final training (screening and full training).
+    """
     def __init__(self, dataset: str = "cifar10", device: str = None):
         self.dataset = dataset
         self.device = device or config.DEVICE
@@ -261,7 +290,20 @@ class FinalEvaluator:
         param_count: int,
         save_dir: str,
     ):
-        """Plot and save training curves."""
+        """
+        Plot and save training curves for loss and accuracy.
+
+        Args:
+            history (list): List of dicts containing epoch stats.
+            individual_id (int): ID of the individual.
+            epochs (int): Total epochs.
+            best_acc (float): Best test accuracy achieved.
+            param_count (int): Number of parameters.
+            save_dir (str): Directory to save plots.
+        
+        Returns:
+            str: Path to the saved plot.
+        """
         if not history:
             return
 
@@ -330,6 +372,16 @@ class FinalEvaluator:
         return plot_path
 
     def evaluate_individual(self, individual: Individual, epochs: int = None) -> Tuple[float, dict]:
+        """
+        Train and evaluate an individual.
+
+        Args:
+            individual (Individual): The architecture to train.
+            epochs (int, optional): Number of training epochs.
+
+        Returns:
+            Tuple[float, dict]: Best accuracy and a detailed result dictionary.
+        """
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
         is_short_train = epochs <= config.SHORT_TRAIN_EPOCHS
@@ -417,6 +469,17 @@ class FinalEvaluator:
         top_k: int = None,
         epochs: int = None,
     ) -> Tuple[Individual, List[dict]]:
+        """
+        Evaluate a batch of top individuals.
+
+        Args:
+            population (List[Individual]): List of candidates.
+            top_k (int, optional): Number of top candidates to evaluate.
+            epochs (int, optional): Training epochs.
+
+        Returns:
+            Tuple[Individual, List[dict]]: Best individual and list of all results.
+        """
         if top_k is None:
             top_k = config.HISTORY_TOP_N2
         if epochs is None:
@@ -462,31 +525,14 @@ class FitnessEvaluator:
 
     def evaluate_individual(self, individual: Individual) -> float:
         """Evaluate NTK fitness for a single individual."""
-        attempts = 0
-        while True:
-            ok, reason, param_count = evaluate_encoding_params(individual.encoding)
-            if ok:
-                individual.param_count = param_count
-                break
-
-            attempts += 1
-            logger.warning(f"Resampling individual {individual.id} for param bounds: {reason}")
-            try:
-                replacement = population_initializer.create_valid_individual()
-                replacement.id = individual.id
-                individual.encoding = replacement.encoding
-                individual.op_history = getattr(replacement, "op_history", [])
-                individual.param_count = getattr(replacement, "param_count", None)
-            except Exception as e:
-                logger.error(f"Resample failed; returning penalty fitness. Reason: {e}")
-                individual.fitness = 100000.0
-                return individual.fitness
-
-            if attempts >= 10:
-                logger.error("Too many resample attempts; returning penalty fitness.")
-                individual.fitness = 100000.0
-                return individual.fitness
-
+        # Clean check of parameter bounds first.
+        ok, reason, param_count = evaluate_encoding_params(individual.encoding)
+        if not ok:
+            logger.warning(f"Individual {individual.id} invalid: {reason}. Returning penalty.")
+            individual.fitness = 100000.0
+            return individual.fitness
+            
+        individual.param_count = param_count
         return self.ntk_evaluator.evaluate_individual(individual, param_count=individual.param_count)
 
     def evaluate_population_ntk(self, population: List[Individual], show_progress: bool = True):
@@ -496,7 +542,7 @@ class FitnessEvaluator:
         for idx, ind in enumerate(population):
             if show_progress:
                 print(f"\rPROGRESS: NTK {idx+1}/{total}", end="", flush=True)
-            self.ntk_evaluator.evaluate_individual(ind)
+            self.evaluate_individual(ind)
 
             if (idx + 1) % 5 == 0:
                 clear_gpu_memory()

@@ -65,12 +65,6 @@ python src/apply/ntk_correlation_experiment.py
 ```
 These scripts use Agg backend by default; they should run headless.
 
-## Testing
-```bash
-PYTHONPATH=src pytest
-```
-Tests include stubs for heavy deps (numpy/torchvision/pandas/scipy/PIL) in `tests/conftest.py`. Keep new dependencies optional or stubbed to avoid breaking CI.
-
 ## Extending the Search Space
 1) Add options/constants to `Config` (e.g., new activation or kernel sizes).
 2) Extend `BlockParams`/`BLOCK_PARAM_COUNT` and sampling logic in `core.search_space`.

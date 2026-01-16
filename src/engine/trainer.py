@@ -23,7 +23,16 @@ class NetworkTrainer:
             logger.warning("CUDA not available, using CPU for training")
 
     def _get_param_groups(self, model: nn.Module, weight_decay: float):
-        """Separate parameters to avoid decaying biases/norm layers."""
+        """
+        Separate parameters to avoid decaying biases/norm layers.
+
+        Args:
+            model (nn.Module): The model.
+            weight_decay (float): Weight decay factor.
+
+        Returns:
+            List[dict]: Parameter groups for the optimizer.
+        """
         decay_params, no_decay_params = [], []
         for name, param in model.named_parameters():
             if not param.requires_grad:
@@ -48,7 +57,22 @@ class NetworkTrainer:
         momentum: float = None,
         nesterov: bool = None,
     ) -> optim.Optimizer:
-        """Create optimizer based on config choice."""
+        """
+        Create optimizer based on config choice.
+
+        Args:
+            model (nn.Module): Model to optimize.
+            optimizer_name (str): 'adamw' or 'sgd'.
+            lr (float): Learning rate.
+            weight_decay (float): Weight decay.
+            betas (tuple): Adam betas.
+            eps (float): Adam epsilon.
+            momentum (float, optional): SGD momentum.
+            nesterov (bool, optional): SGD nesterov.
+        
+        Returns:
+            optim.Optimizer: Configured optimizer.
+        """
         name = optimizer_name.lower()
         params = self._get_param_groups(model, weight_decay)
 
@@ -73,6 +97,20 @@ class NetworkTrainer:
         epoch: int,
         total_epochs: int,
     ) -> Tuple[float, float]:
+        """
+        Train the model for a single epoch.
+
+        Args:
+            model: The neural network.
+            trainloader: Training data loader.
+            criterion: Loss function.
+            optimizer: Optimizer.
+            epoch: Current epoch number.
+            total_epochs: Total epochs (for logging).
+
+        Returns:
+            Tuple[float, float]: Average loss and accuracy.
+        """
         model.train()
         running_loss = 0.0
         correct = 0
@@ -114,6 +152,17 @@ class NetworkTrainer:
         testloader: DataLoader,
         criterion: nn.Module,
     ) -> Tuple[float, float]:
+        """
+        Evaluate the model on the validation/test set.
+
+        Args:
+            model: The neural network.
+            testloader: Validation/Test data loader.
+            criterion: Loss function.
+
+        Returns:
+            Tuple[float, float]: Average loss and accuracy.
+        """
         model.eval()
         test_loss = 0.0
         correct = 0
@@ -148,6 +197,25 @@ class NetworkTrainer:
         optimizer_name: str = None,
         warmup_epochs: int = None,
     ) -> Tuple[float, List[dict]]:
+        """
+        Run the full training loop.
+
+        Args:
+            model: The neural network.
+            trainloader: Training set loader.
+            testloader: Test set loader.
+            epochs: Max epochs.
+            lr: Learning rate (override).
+            weight_decay: Weight decay (override).
+            betas: Adam betas (override).
+            eps: Adam epsilon (override).
+            early_stopping: Whether to use early stopping.
+            optimizer_name: Optimizer name (override).
+            warmup_epochs: Number of warmup epochs.
+
+        Returns:
+            Tuple[float, List[dict]]: Best test accuracy and training history.
+        """
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
         if optimizer_name is None:
