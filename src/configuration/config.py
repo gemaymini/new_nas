@@ -14,15 +14,15 @@ class Config:
     DATA_DIR = os.path.join(BASE_DIR, "data")
 
     # ==================== Evolution parameters ====================
-    POPULATION_SIZE = 50          # Aging Evolution queue size
-    MAX_GEN = 1000                 # Total individuals evaluated in search
+    POPULATION_SIZE = 5         # Aging Evolution queue size
+    MAX_GEN = 100                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
     # ==================== Screening/training pipeline ====================
-    HISTORY_TOP_N1 = 20            # Stage 1: Top N1 by NTK
+    HISTORY_TOP_N1 = 2            # Stage 1: Top N1 by NTK
     SHORT_TRAIN_EPOCHS = 30        # Stage 1 short training epochs
-    HISTORY_TOP_N2 = 5             # Stage 2: Top N2 by validation accuracy
+    HISTORY_TOP_N2 = 1             # Stage 2: Top N2 by validation accuracy
     FULL_TRAIN_EPOCHS = 300        # Final training epochs
 
     # ==================== Crossover/mutation ====================

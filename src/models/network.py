@@ -20,9 +20,9 @@ def get_activation(activation_type: int) -> nn.Module:
         nn.Module: Activation layer.
     """
     if activation_type == 1:
-        return nn.SiLU(inplace=True)
+        return nn.SiLU(inplace=False)
     else:
-        return nn.ReLU(inplace=True)
+        return nn.ReLU(inplace=False)
 
 
 class SEBlock(nn.Module):
@@ -34,7 +34,7 @@ class SEBlock(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channels, channels // reduction, bias=False),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Linear(channels // reduction, channels, bias=False),
             nn.Sigmoid()
         )
@@ -59,7 +59,7 @@ class ConvUnit(nn.Module):
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
                               stride, padding, bias=False)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -257,7 +257,18 @@ class SearchedNetwork(nn.Module):
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+        # LowGamma Initialization:
+        # Initialize the last BN in each residual block to 0.1.
+        # This keeps the block close to identity for stability,
+        # but provides enough gradient signal for NTK to obtain non-singular matrices.
+        for unit in self.units:
+            for block in unit.blocks:
+                # RegBlock has bn3 as the last normalization layer
+                if hasattr(block, 'bn3') and isinstance(block.bn3, (nn.BatchNorm2d, nn.GroupNorm)):
+                    nn.init.constant_(block.bn3.weight, 0.1)
 
     def forward(self, x):
         x = self.conv_unit(x)

@@ -198,7 +198,7 @@ class NTKEvaluator:
                     network.zero_grad()
 
         if len(grads) == 0:
-            return 100000.0
+            return 10000000000.0
 
         if HAS_TORCH_FUNC:
              grads_tensor = torch.cat(grads, dim=0) # (TotalBatch, TotalParams)
@@ -220,10 +220,10 @@ class NTKEvaluator:
         min_eigen = eigenvalues_abs.min().item()
 
         if min_eigen < 1e-10:
-            cond = 100000.0
+            cond = 10000000000.0
         else:
             cond = max_eigen / min_eigen
-        cond = np.nan_to_num(cond, nan=100000.0, posinf=100000.0, neginf=100000.0)
+        cond = np.nan_to_num(cond, nan=10000000000.0, posinf=10000000000.0, neginf=10000000000.0)
 
         del grads, grads_tensor, ntk, eigenvalues
         clear_gpu_memory()
@@ -253,7 +253,7 @@ class NTKEvaluator:
                     network,
                     self.trainloader,
                     num_batch=self.num_batch,
-                    train_mode=True,
+                    train_mode=False,
                 )
                 total_cond += cond
 
@@ -262,7 +262,7 @@ class NTKEvaluator:
         except Exception as e:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
-            return 100000.0
+            return 10000000000.0
 
     def evaluate_individual(self, individual: Individual) -> float:
         try:
@@ -282,9 +282,9 @@ class NTKEvaluator:
 
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
-            individual.fitness = 100000.0
+            individual.fitness = 10000000000.0
             clear_gpu_memory()
-            return 100000.0
+            return 10000000000.0
 
 
 class FinalEvaluator:
@@ -492,7 +492,7 @@ class FitnessEvaluator:
     def evaluate_individual(self, individual: Individual) -> float:
         """Evaluate NTK fitness for a single individual."""
         # Trust upstream validation.
-        return self.ntk_evaluator.evaluate_individual(individual, param_count=individual.param_count)
+        return self.ntk_evaluator.evaluate_individual(individual)
 
 
 

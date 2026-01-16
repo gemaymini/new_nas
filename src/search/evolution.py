@@ -340,7 +340,7 @@ class AgingEvolutionNAS:
 
     def _record_statistics(self):
         fitnesses = [ind.fitness for ind in self.population if ind.fitness is not None]
-        valid_fitnesses = [f for f in fitnesses if f < 100000.0]
+        valid_fitnesses = [f for f in fitnesses if f < 10000000000.0]
 
         if valid_fitnesses:
             avg_fitness = sum(valid_fitnesses) / len(valid_fitnesses)
@@ -451,7 +451,7 @@ class AgingEvolutionNAS:
         steps = []
         ntk_values = []
         for step, ind_id, ntk, encoding in self.ntk_history:
-            if ntk is not None and ntk < 100000:
+            if ntk is not None and ntk < 10000000000:
                 steps.append(step)
                 ntk_values.append(ntk)
 
@@ -495,7 +495,7 @@ class AgingEvolutionNAS:
         ax3 = axes[1, 0]
         step_best = {}
         for step, ind_id, ntk, encoding in self.ntk_history:
-            if ntk is not None and ntk < 100000:
+            if ntk is not None and ntk < 10000000000:
                 if step not in step_best or ntk < step_best[step]:
                     step_best[step] = ntk
 

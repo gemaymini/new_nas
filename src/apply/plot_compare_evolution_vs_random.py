@@ -34,8 +34,8 @@ def main():
     evo_curve, rand_curve, evo_all, rand_all = load_data(args.json_path)
     
     # Calculate some basic stats for printing
-    min_evo = min([v for v in evo_curve if v < 100000]) if any(v < 100000 for v in evo_curve) else 999999
-    min_rand = min([v for v in rand_curve if v < 100000]) if any(v < 100000 for v in rand_curve) else 999999
+    min_evo = min([v for v in evo_curve if v < 10000000000]) if any(v < 10000000000 for v in evo_curve) else 999999
+    min_rand = min([v for v in rand_curve if v < 10000000000]) if any(v < 10000000000 for v in rand_curve) else 999999
     
     improvement = (min_rand - min_evo) / min_rand * 100 if min_rand > 0 else 0
     print(

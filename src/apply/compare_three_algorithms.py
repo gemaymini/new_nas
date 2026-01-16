@@ -153,7 +153,7 @@ class ThreeStageEA:
             
             if eval_count % 50 == 0:
                 valid_fitnesses = [ind.fitness for ind in self.history 
-                                   if ind.fitness is not None and ind.fitness < 100000]
+                                   if ind.fitness is not None and ind.fitness < 10000000000]
                 best_ntk = min(valid_fitnesses) if valid_fitnesses else float('inf')
                 logger.info(f"  Evolution progress: {eval_count}/{self.max_evaluations}, Best NTK: {best_ntk:.2f}")
                 clear_gpu_memory()

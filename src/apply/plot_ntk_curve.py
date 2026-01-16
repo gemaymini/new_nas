@@ -55,7 +55,7 @@ def plot_ntk_curve(ntk_history, output_path='ntk_curve.png', title_prefix=''):
     individual_ids = []
     
     for step, ind_id, ntk, encoding in ntk_history:
-        if ntk is not None and ntk < 100000:
+        if ntk is not None and ntk < 10000000000:
             steps.append(step)
             ntk_values.append(ntk)
             individual_ids.append(ind_id)

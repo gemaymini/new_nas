@@ -105,6 +105,7 @@ class MutationOperator:
         if unit_num >= config.MAX_UNIT_NUM:
             return encoding, {"op": "add_unit", "applied": False, "reason": "max_unit_limit"}
         new_block_num = search_space.sample_block_num()
+        insert_pos = random.randint(0, unit_num)
         new_blocks = [
             search_space.sample_block_params(
                 allow_concat=idx == new_block_num - 1,
@@ -113,7 +114,6 @@ class MutationOperator:
             )
             for idx in range(new_block_num)
         ]
-        insert_pos = random.randint(0, unit_num)
         block_nums.insert(insert_pos, new_block_num)
         block_params_list.insert(insert_pos, new_blocks)
         self._enforce_concat_last(block_params_list)

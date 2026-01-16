@@ -49,13 +49,13 @@ class RandomSearch:
             fitness_evaluator.evaluate_individual(ind)
             self.history.append(ind)
             
-            current_fitness = ind.fitness if ind.fitness is not None else 100000
+            current_fitness = ind.fitness if ind.fitness is not None else 10000000000
             self.all_fitness_values.append(current_fitness)
             
-            if ind.fitness is not None and ind.fitness < 100000:
+            if ind.fitness is not None and ind.fitness < 10000000000:
                 best_fitness = min(best_fitness, ind.fitness)
             
-            self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 100000)
+            self.best_fitness_curve.append(best_fitness if best_fitness < float('inf') else 10000000000)
             
             if (i + 1) % 20 == 0:
                 logger.info(f"Random Search [{i+1}/{self.max_evaluations}] Best NTK: {best_fitness:.4f}")
@@ -95,15 +95,15 @@ def run_evolution_phase(max_evaluations: int, population_size: int) -> Tuple[Lis
     for entry in nas.ntk_history:
         fitness = entry[2]
         if fitness is None: 
-            fitness = 100000.0
+            fitness = 10000000000.0
             
         all_fitness_values.append(fitness)
         
-        if fitness < 100000:
+        if fitness < 10000000000:
             if fitness < current_best:
                 current_best = fitness
         
-        best_fitness_curve.append(current_best if current_best < float('inf') else 100000.0)
+        best_fitness_curve.append(current_best if current_best < float('inf') else 10000000000.0)
             
     return history, best_fitness_curve, all_fitness_values
 
@@ -113,9 +113,9 @@ def run_evolution_phase(max_evaluations: int, population_size: int) -> Tuple[Lis
 def compute_statistics(evolution_history: List[Individual], random_history: List[Individual],
                        evolution_curve: List[float], random_curve: List[float]) -> dict:
     evo_fitnesses = [ind.fitness for ind in evolution_history 
-                     if ind.fitness is not None and ind.fitness < 100000]
+                     if ind.fitness is not None and ind.fitness < 10000000000]
     rand_fitnesses = [ind.fitness for ind in random_history 
-                      if ind.fitness is not None and ind.fitness < 100000]
+                      if ind.fitness is not None and ind.fitness < 10000000000]
     
     stats = {
         'evolution': {

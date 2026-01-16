@@ -32,8 +32,8 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     steps = list(range(1, len(evolution_curve) + 1))
     
     # Filter valid values (assuming huge values are invalid/failures)
-    evo_valid_vals = [v for v in evolution_all_ntk if v < 100000]
-    rand_valid_vals = [v for v in random_all_ntk if v < 100000]
+    evo_valid_vals = [v for v in evolution_all_ntk if v < 10000000000]
+    rand_valid_vals = [v for v in random_all_ntk if v < 10000000000]
     
     # --- 1. Cumulative Best NTK ---
     ax1 = axes[0, 0]
@@ -51,8 +51,8 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     
     # --- 2. All Individual NTK Values (Scatter) ---
     ax2 = axes[0, 1]
-    evo_valid = [(i+1, v) for i, v in enumerate(evolution_all_ntk) if v < 100000]
-    rand_valid = [(i+1, v) for i, v in enumerate(random_all_ntk) if v < 100000]
+    evo_valid = [(i+1, v) for i, v in enumerate(evolution_all_ntk) if v < 10000000000]
+    rand_valid = [(i+1, v) for i, v in enumerate(random_all_ntk) if v < 10000000000]
     if evo_valid:
         evo_steps, evo_vals = zip(*evo_valid)
         ax2.scatter(evo_steps, evo_vals, alpha=0.6, s=20, c='blue', label='Aging Evolution', edgecolors='none')
@@ -133,7 +133,7 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     window_size = max(5, len(evolution_all_ntk) // 20)
     
     def moving_average_continuous(data, window):
-        cleaned = np.array([v if v < 100000 else np.nan for v in data], dtype=float)
+        cleaned = np.array([v if v < 10000000000 else np.nan for v in data], dtype=float)
         
         valid_mask = ~np.isnan(cleaned)
         if np.sum(valid_mask) >= 2:
@@ -165,8 +165,8 @@ def plot_comparison(evolution_curve: List[float], random_curve: List[float],
     
     # --- 7. Sequential NTK Line Plot ---
     ax7 = axes[3, 0]
-    evo_line = np.array([v if v < 100000 else np.nan for v in evolution_all_ntk], dtype=float)
-    rand_line = np.array([v if v < 100000 else np.nan for v in random_all_ntk], dtype=float)
+    evo_line = np.array([v if v < 10000000000 else np.nan for v in evolution_all_ntk], dtype=float)
+    rand_line = np.array([v if v < 10000000000 else np.nan for v in random_all_ntk], dtype=float)
     
     for arr in [evo_line, rand_line]:
         valid_mask = ~np.isnan(arr)
