@@ -18,6 +18,7 @@ import threading
 import psutil
 import torch
 import hashlib
+import argparse
 
 # Add src to path (apply is now under src/apply/)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,6 +30,7 @@ from engine.trainer import NetworkTrainer
 from engine.evaluator import NTKEvaluator
 from data.dataset import DatasetLoader
 from utils.logger import logger
+from utils.constraints import update_param_bounds_for_dataset
 
 class ExperimentLogger:
     def __init__(self, log_dir):
@@ -217,7 +219,7 @@ class Visualizer:
         plt.savefig(os.path.join(self.output_dir, 'hardware_usage.png'))
         plt.close()
 
-def run_ntk_experiment(num_models=5, short_epochs=5):
+def run_ntk_experiment(num_models=5, short_epochs=5, dataset: str = None, optimizer: str = None):
     # Setup Paths
     # Use absolute path to avoid issues with relative paths on servers
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ntk_experiment_results')
@@ -226,6 +228,13 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
         
     # Initialize Logger
     exp_logger = ExperimentLogger(output_dir)
+
+    if dataset:
+        config.FINAL_DATASET = dataset
+    if optimizer:
+        config.OPTIMIZER = optimizer
+    update_param_bounds_for_dataset(config.FINAL_DATASET)
+
     exp_logger.set_config({
         "num_models": num_models,
         "short_epochs": short_epochs,
@@ -313,4 +322,16 @@ def run_ntk_experiment(num_models=5, short_epochs=5):
             print(f"WARN: visualization_failed: {e}")
 
 if __name__ == "__main__":
-    run_ntk_experiment(num_models=10, short_epochs=15)
+    parser = argparse.ArgumentParser(description="NTK vs short-train correlation experiment")
+    parser.add_argument("--num_models", type=int, default=10, help="Number of models to sample")
+    parser.add_argument("--short_epochs", type=int, default=15, help="Short training epochs")
+    parser.add_argument("--dataset", type=str, default=None, choices=["cifar10", "cifar100"], help="Dataset to use")
+    parser.add_argument("--optimizer", type=str, default=None, choices=config.OPTIMIZER_OPTIONS, help="Optimizer to use")
+    args = parser.parse_args()
+
+    run_ntk_experiment(
+        num_models=args.num_models,
+        short_epochs=args.short_epochs,
+        dataset=args.dataset,
+        optimizer=args.optimizer,
+    )

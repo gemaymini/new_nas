@@ -14,6 +14,7 @@ import pandas as pd
 import json
 import time
 import datetime
+import argparse
 import torch
 import hashlib
 
@@ -26,6 +27,7 @@ from models.network import NetworkBuilder
 from engine.trainer import NetworkTrainer
 from data.dataset import DatasetLoader
 from utils.logger import logger
+from utils.constraints import update_param_bounds_for_dataset
 
 class ExperimentLogger:
     def __init__(self, log_dir):
@@ -226,7 +228,7 @@ class Visualizer:
         plt.savefig(os.path.join(self.output_dir, 'training_curves.png'))
         plt.close()
 
-def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
+def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5, dataset: str = None, optimizer: str = None):
     # Setup Paths
     # Use absolute path to avoid issues with relative paths on servers
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experiment_results')
@@ -235,6 +237,12 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
         
     # Initialize Logger
     exp_logger = ExperimentLogger(output_dir)
+    if dataset:
+        config.FINAL_DATASET = dataset
+    if optimizer:
+        config.OPTIMIZER = optimizer
+    update_param_bounds_for_dataset(config.FINAL_DATASET)
+
     exp_logger.set_config({
         "num_models": num_models,
         "full_epochs": full_epochs,
@@ -326,5 +334,18 @@ def run_correlation_experiment(num_models=5, full_epochs=20, short_epochs=5):
             print(f"WARN: visualization_failed: {e}")
 
 if __name__ == "__main__":
-    # You can adjust these numbers for the real run
-    run_correlation_experiment(num_models=50, full_epochs=100, short_epochs=20)
+    parser = argparse.ArgumentParser(description="NTK vs accuracy correlation experiment")
+    parser.add_argument("--num_models", type=int, default=50, help="Number of models to sample")
+    parser.add_argument("--full_epochs", type=int, default=100, help="Full training epochs")
+    parser.add_argument("--short_epochs", type=int, default=20, help="Epoch used as short-training metric")
+    parser.add_argument("--dataset", type=str, default=None, choices=["cifar10", "cifar100"], help="Dataset to use")
+    parser.add_argument("--optimizer", type=str, default=None, choices=config.OPTIMIZER_OPTIONS, help="Optimizer to use")
+    args = parser.parse_args()
+
+    run_correlation_experiment(
+        num_models=args.num_models,
+        full_epochs=args.full_epochs,
+        short_epochs=args.short_epochs,
+        dataset=args.dataset,
+        optimizer=args.optimizer,
+    )

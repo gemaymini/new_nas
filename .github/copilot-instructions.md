@@ -1,101 +1,45 @@
-# NAS 项目 Copilot 指南
+# Copilot Instructions for this NAS Project
 
-## 项目概述
-基于**老化进化算法 (Aging Evolution)** 的神经网络架构搜索系统，使用 **NTK 条件数**作为零成本代理进行架构评估。
+Use these guidelines when generating code or suggestions in this repository to stay aligned with existing patterns, constraints, and tests.
 
-## 核心架构
+## Project overview
+- Domain: evolutionary neural architecture search with NTK-based screening and staged training.
+- Entry point: `src/main.py` (CLI). Core search: `src/search/evolution.py`, `src/search/mutation.py`. Evaluation/training: `src/engine/evaluator.py`, `src/engine/trainer.py`. Model building: `src/models/network.py`. Configuration: `src/configuration/config.py`. Utilities: `src/utils/`. Experiments/plots: `src/apply/`. Tests: `tests/` (heavy dependencies are stubbed there).
 
-### 数据流
-```
-main.py → AgingEvolutionNAS.run_search() → fitness_evaluator(NTK) → run_screening_and_training()
-           ↓                                                            ↓
-    population_initializer.create_valid_individual()              短期训练筛选 → 完整训练
-           ↓
-    mutation_operator / crossover_operator
-```
+## Coding conventions
+- Python 3.10+. Prefer explicit imports from `src` (avoid fragile relative imports). Keep functions cohesive and short; add type hints where they improve clarity.
+- Logging: use `utils.logger.logger` (info/debug/warning/error). Reserve `print` for simple CLI status in scripts.
+- Comments: only for non-obvious logic (shape assumptions, probabilistic choices, corner-case guards). Avoid restating code.
+- Configuration: add/adjust knobs in `Config` (`src/configuration/config.py`); do not scatter magic numbers.
 
-### 关键模块职责
-| 模块 | 职责 |
-|------|------|
-| [src/configuration/config.py](src/configuration/config.py) | 所有超参数配置 (Config 单例类) |
-| [src/core/encoding.py](src/core/encoding.py) | 架构编码：`Individual`、`BlockParams`、`Encoder` |
-| [src/search/evolution.py](src/search/evolution.py) | 老化进化主逻辑：`AgingEvolutionNAS` |
-| [src/engine/evaluator.py](src/engine/evaluator.py) | NTK 评估：`NTKEvaluator`、`FinalEvaluator` |
-| [src/models/network.py](src/models/network.py) | 网络构建：`RegBlock`、`RegUnit`、`NetworkBuilder` |
+## Architecture and constraints
+- Always validate encodings with `core.encoding.Encoder.validate_encoding`; keep concat skips (`skip_type == 1`) only on the last block of each unit.
+- Respect parameter-count limits via `utils.constraints` and `Config`; never hardcode bounds or bypass checks.
+- When modifying search/mutation/generation, ensure individuals remain valid and non-duplicate (reuse helpers like `utils.generation.generate_valid_child`).
 
-## 架构编码规范
+## Devices, performance, and memory
+- Guard CUDA usage with `torch.cuda.is_available()` and provide CPU fallback. Avoid implicit `.cuda()` calls.
+- Free GPU/CPU memory after heavy ops (e.g., `clear_gpu_memory()`); avoid holding unnecessary tensors.
+- Plots/scripts should run headless: set Agg backend when needed and avoid `plt.show()` by default.
 
-### 编码结构 (变长整数列表)
-```
-[unit_num, block_num_1, ..., block_num_n, block_params_1, ..., block_params_m]
-```
+## Testing and stubs
+- Tests rely on lightweight stubs in `tests/conftest.py` for numpy/torchvision/pandas/scipy/PIL. Keep new dependencies optional or stubbed similarly to avoid breaking tests.
+- When adding CLI args, keep backwards compatibility with tests that may omit fields; update `main.py` defaults accordingly.
+- Preserve deterministic behavior in tests (respect fixed seeds in fixtures).
 
-### BlockParams (9 个参数)
-```python
-[out_channels, groups, pool_type, pool_stride, has_senet, 
- activation_type, dropout_rate*100, skip_type, kernel_size]
-```
-- `activation_type`: 0=ReLU, 1=SiLU, 2=GELU
-- `skip_type`: 0=add, 1=concat, 2=none
-- `dropout_rate`: 存储时乘 100 转为整数
+## File organization and additions
+- Core search/eval code belongs in `src/search` or `src/engine`; shared helpers in `src/utils`; model blocks in `src/models`.
+- Plotting/experiment utilities belong in `src/apply` and should be runnable as scripts.
+- Prefer extending existing helpers over duplicating logic; keep new helpers small and close to their usage.
 
-## 开发命令
+## Safety and resilience
+- Handle missing files/dirs gracefully (checkpoints, datasets) with clear error messages.
+- Avoid assuming network access or GPU presence in default/test code paths.
 
-```bash
-# 运行搜索 (从 src 目录)
-python src/main.py --dataset cifar10 --max_gen 100 --population_size 20
+## CLI behavior
+- `main.py` should tolerate missing optional args (sensible defaults; no crashes when fields are absent).
+- Scripts under `src/apply/` should parse args with defaults and avoid side effects on import.
 
-# 断点续训
-python src/main.py --resume checkpoints/checkpoint_gen50.pkl
-
-# 实验脚本 (在 src/apply 目录)
-python src/apply/ntk_correlation_experiment.py
-python src/apply/plot_ntk_curve.py
-```
-
-## 编码规范
-
-### 配置修改
-- 所有超参数在 `config.py` 的 `Config` 类中定义
-- 运行时参数通过 `argparse` 覆盖 config 值
-
-### 变异算子扩展
-在 [src/search/mutation.py](src/search/mutation.py) 的 `MutationOperator` 类中添加，并在 `mutate()` 方法中集成：
-```python
-def mutate(self, individual: Individual) -> Individual:
-    # 按概率依次应用各变异算子
-```
-
-### 搜索空间扩展
-1. 在 `config.py` 添加新选项列表 (如 `XXX_OPTIONS = [...]`)
-2. 在 `BlockParams` 类添加对应属性
-3. 更新 `BLOCK_PARAM_COUNT` 常量
-4. 在 `search_space.py` 添加采样方法
-
-### 网络组件
-- 所有卷积块继承 `nn.Module`，实现 `forward()` 方法
-- `RegBlock` 支持可变卷积核、激活函数、跳跃连接类型
-- `EXPANSION` 参数控制通道扩展比 (类似 ResNeXt)
-
-## 关键约束
-
-### NTK 评估
-- 参数量超过 `NTK_PARAM_THRESHOLD` 的模型跳过评估，返回高惩罚值
-- 使用 `train_mode=True` 计算 NTK (与原始论文一致)
-- 多次运行取平均以稳定结果
-
-### 编码验证
-- `groups` 必须能整除 `out_channels`
-- unit 数量范围: `[MIN_UNIT_NUM, MAX_UNIT_NUM]`
-- block 数量范围: `[MIN_BLOCK_NUM, MAX_BLOCK_NUM]`
-- 使用 `Encoder.validate_encoding()` 验证
-
-### GPU 内存管理
-- 评估后调用 `clear_gpu_memory()` 清理缓存
-- 已移除 512 通道选项以避免 OOM
-
-## 日志与输出
-- 训练日志: `logs/nas_*.log`
-- TensorBoard: `runs/`
-- NTK 历史: `logs/ntk_history.json`
-- Checkpoints: `checkpoints/`
+## Non-goals
+- Do not introduce training-time downloads or heavy, un-stubbed dependencies.
+- Do not add verbose boilerplate comments or redundant logging.

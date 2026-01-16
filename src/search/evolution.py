@@ -17,6 +17,8 @@ from core.encoding import Encoder, Individual
 from core.search_space import population_initializer
 from search.mutation import mutation_operator, selection_operator, crossover_operator
 from engine.evaluator import fitness_evaluator, FinalEvaluator
+from utils.generation import generate_valid_child
+from utils.constraints import evaluate_encoding_params
 from utils.logger import logger, tb_logger
 
 
@@ -105,42 +107,17 @@ class AgingEvolutionNAS:
 
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
         """Generate one offspring using crossover and mutation."""
-        child = None
-        ops = []
-
-        do_crossover = random.random() < config.PROB_CROSSOVER
-        do_mutation = random.random() < config.PROB_MUTATION or not do_crossover
-
-        if do_crossover:
-            c1, c2, cross_detail = crossover_operator.crossover(parent1, parent2)
-            chosen_child, chosen_label = random.choice([(c1, "child1"), (c2, "child2")])
-            cross_detail["parent_ids"] = [parent1.id, parent2.id]
-            cross_detail["chosen_child"] = chosen_label
-            child = chosen_child
-            ops.append(cross_detail)
-        else:
-            chosen_parent = random.choice([parent1, parent2])
-            child = chosen_parent.copy()
-            ops.append(
-                {
-                    "op": "copy_parent",
-                    "applied": True,
-                    "source_parent_id": chosen_parent.id,
-                }
-            )
-
-        if do_mutation:
-            child = mutation_operator.mutate(child)
-            if hasattr(child, "op_history"):
-                ops.extend(child.op_history)
-        child.op_history = ops
-
-        if not Encoder.validate_encoding(child.encoding):
-            child = self._repair_individual(child)
-            repair_ops = getattr(child, "op_history", [])
-            child.op_history = ops + repair_ops
-
-        return child
+        return generate_valid_child(
+            parent1=parent1,
+            parent2=parent2,
+            crossover_fn=crossover_operator.crossover,
+            mutation_fn=mutation_operator.mutate,
+            repair_fn=self._repair_individual,
+            resample_fn=population_initializer.create_valid_individual,
+            crossover_prob=config.PROB_CROSSOVER,
+            mutation_prob=config.PROB_MUTATION,
+            max_attempts=50,
+        )
 
     def _repair_individual(self, ind: Individual) -> Individual:
         while True:
@@ -166,6 +143,13 @@ class AgingEvolutionNAS:
                 self.duplicate_count += 1
                 print("WARN: duplicate architecture, resampling")
                 continue
+
+            # Enforce param bounds before expensive eval/logging; resample instead of recording failure.
+            ok, reason, param_count = evaluate_encoding_params(child.encoding)
+            if not ok:
+                logger.warning(f"Resampling child: param bounds failed ({reason})")
+                continue
+            child.param_count = param_count
             break
 
         self._register_encoding(child.encoding)
@@ -248,6 +232,10 @@ class AgingEvolutionNAS:
             reverse=False,
         )
 
+        if not candidates:
+            logger.warning("No evaluated individuals available for screening; skipping training stage.")
+            return None
+
         top_n1 = candidates[:config.HISTORY_TOP_N1]
         logger.info(
             f"Selected Top {config.HISTORY_TOP_N1} candidates from {len(candidates)} "
@@ -280,6 +268,11 @@ class AgingEvolutionNAS:
             f"Selected Top {config.HISTORY_TOP_N2} candidates based on Short Training Accuracy."
         )
 
+        if not top_n2:
+            logger.warning("No candidates advanced to full training; skipping final stage.")
+            self._save_time_stats()
+            return None
+
         logger.info(
             f"Starting Full Training ({config.FULL_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N2}..."
         )
@@ -287,7 +280,7 @@ class AgingEvolutionNAS:
 
         final_results = []
         best_final_ind = None
-        best_final_acc = 0.0
+        best_final_acc = float("-inf")
 
         for i, ind in enumerate(top_n2):
             logger.info(f"Full Train [{i+1}/{len(top_n2)}] ID: {ind.id}")
@@ -305,6 +298,10 @@ class AgingEvolutionNAS:
         logger.info(f"Full Training completed. Time: {self._format_time(self.full_train_time)}")
 
         self._save_time_stats()
+
+        if best_final_ind is None:
+            logger.warning("No valid final model produced during full training.")
+            return None
 
         logger.info(f"Best Final Model: ID={best_final_ind.id}, Acc={best_final_acc:.2f}%")
         return best_final_ind

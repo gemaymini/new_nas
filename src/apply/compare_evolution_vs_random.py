@@ -23,7 +23,9 @@ from core.encoding import Encoder, Individual
 from core.search_space import population_initializer
 from search.mutation import mutation_operator, selection_operator, crossover_operator
 from engine.evaluator import fitness_evaluator, clear_gpu_memory
+from utils.generation import generate_valid_child
 from utils.logger import logger
+from utils.constraints import update_param_bounds_for_dataset
 
 
 class RandomSearch:
@@ -84,26 +86,24 @@ class AgingEvolutionSearch:
         return parents[0], parents[1]
     
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        child = None
-        
-        if random.random() < config.PROB_CROSSOVER:
-            c1, c2, _ = crossover_operator.crossover(parent1, parent2)
-            child = random.choice([c1, c2])
-        else:
-            child = random.choice([parent1, parent2]).copy()
-        
-        if random.random() < config.PROB_MUTATION:
-            child = mutation_operator.mutate(child)
-        
-        if not Encoder.validate_encoding(child.encoding):
+        def repair_fn(child: Individual) -> Individual:
             for _ in range(20):
-                child = mutation_operator.mutate(random.choice([parent1, parent2]))
-                if Encoder.validate_encoding(child.encoding):
-                    break
-            else:
-                child = random.choice([parent1, parent2]).copy()
-        
-        return child
+                candidate = mutation_operator.mutate(random.choice([parent1, parent2]))
+                if Encoder.validate_encoding(candidate.encoding):
+                    return candidate
+            return random.choice([parent1, parent2]).copy()
+
+        return generate_valid_child(
+            parent1=parent1,
+            parent2=parent2,
+            crossover_fn=crossover_operator.crossover,
+            mutation_fn=mutation_operator.mutate,
+            repair_fn=repair_fn,
+            resample_fn=population_initializer.create_valid_individual,
+            crossover_prob=config.PROB_CROSSOVER,
+            mutation_prob=config.PROB_MUTATION,
+            max_attempts=50,
+        )
     
     def run(self) -> Tuple[List[Individual], List[float], List[float]]:
         logger.info(f"Starting Aging Evolution for {self.max_evaluations} evaluations...")
@@ -396,7 +396,11 @@ def compute_statistics(evolution_history: List[Individual], random_history: List
 
 
 def run_experiment(max_evaluations: int, population_size: int, seed: int = None, 
-                   output_dir: str = None):
+                   output_dir: str = None, dataset: str = None):
+    if dataset:
+        config.FINAL_DATASET = dataset
+    update_param_bounds_for_dataset(config.FINAL_DATASET)
+
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -500,6 +504,8 @@ def main():
                         help='Random seed for reproducibility')
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Directory to save results')
+    parser.add_argument('--dataset', type=str, default=None, choices=['cifar10', 'cifar100'],
+                        help='Dataset to use for NTK bounds (default: config.FINAL_DATASET)')
     
     args = parser.parse_args()
     
@@ -507,7 +513,8 @@ def main():
         max_evaluations=args.max_eval,
         population_size=args.pop_size,
         seed=args.seed,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        dataset=args.dataset,
     )
 
 

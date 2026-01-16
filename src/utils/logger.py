@@ -35,11 +35,18 @@ class Logger:
     def __init__(self):
         self.logger = logging.getLogger("NAS")
         self.logger.setLevel(getattr(logging, config.LOG_LEVEL))
+        # Prevent logs from being propagated to the root logger and duplicating.
+        self.logger.propagate = False
         self.file_handler = None
 
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(logging.Formatter("%(message)s"))
-        self.logger.addHandler(console_handler)
+        has_stdout_handler = any(
+            isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+            for h in self.logger.handlers
+        )
+        if not has_stdout_handler:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(logging.Formatter("%(message)s"))
+            self.logger.addHandler(console_handler)
 
     def setup_file_logging(self):
         """Initialize file logging once."""

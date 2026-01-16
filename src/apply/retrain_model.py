@@ -18,6 +18,7 @@ from models.network import NetworkBuilder
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer
 from configuration.config import config
+from utils.constraints import update_param_bounds_for_dataset
 from utils.logger import logger
 
 
@@ -52,20 +53,31 @@ def build_fresh_network(encoding: list, input_channels: int = 3, num_classes: in
 
 
 def train_once(encoding: list, trainloader, testloader, epochs: int, 
-               run_id: int, device: str = None) -> dict:
+               run_id: int, device: str = None, num_classes: int = 10,
+               optimizer_name: str = None, lr: float = None) -> dict:
     print(f"INFO: training_run_start id={run_id}")
     
-    network = build_fresh_network(encoding)
+    network = build_fresh_network(encoding, num_classes=num_classes)
     param_count = network.get_param_count()
     print(f"INFO: network_params={param_count:,}")
     
     trainer = NetworkTrainer(device=device)
+    opt_name = optimizer_name or config.OPTIMIZER
+    opt_defaults = config.get_optimizer_params(opt_name)
+    lr_to_use = lr if lr is not None else opt_defaults["lr"]
+    logger.info(
+        "Training hyperparams: optimizer=%s lr=%s weight_decay=%s betas=%s eps=%s warmup_epochs=%s",
+        opt_name, lr_to_use, opt_defaults.get("weight_decay"),
+        opt_defaults.get("betas"), opt_defaults.get("eps"), opt_defaults.get("warmup_epochs"),
+    )
     
     best_acc, history = trainer.train_network(
         model=network,
         trainloader=trainloader,
         testloader=testloader,
-        epochs=epochs
+        epochs=epochs,
+        optimizer_name=opt_name,
+        lr=lr,
     )
     
     final_train_acc = history[-1]['train_acc']
@@ -88,7 +100,8 @@ def train_once(encoding: list, trainloader, testloader, epochs: int,
 
 def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
                   dataset: str = 'cifar10', device: str = None,
-                  save_results: bool = True) -> dict:
+                  save_results: bool = True, optimizer: str = None,
+                  lr: float = None) -> dict:
     encoding = load_model_encoding(model_path)
     
     print(f"INFO: encoding={encoding}")
@@ -98,11 +111,17 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
     print("INFO: loading_dataset")
     if dataset == 'cifar10':
         trainloader, testloader = DatasetLoader.get_cifar10()
+        num_classes = 10
+        config.NTK_NUM_CLASSES = 10
     elif dataset == 'cifar100':
         trainloader, testloader = DatasetLoader.get_cifar100()
+        num_classes = 100
+        config.NTK_NUM_CLASSES = 100
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
     print(f"INFO: dataset={dataset} train_batches={len(trainloader)} test_batches={len(testloader)}")
+    config.FINAL_DATASET = dataset
+    update_param_bounds_for_dataset(dataset)
     
     if device is None:
         device = config.DEVICE
@@ -110,10 +129,15 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         device = 'cpu'
         print("WARN: cuda not available; using cpu")
     print(f"INFO: device={device}")
+
+    optimizer_name = optimizer or config.OPTIMIZER
+    config.OPTIMIZER = optimizer_name
     
     all_results = []
     best_accs = []
     final_test_accs = []
+    opt_defaults = config.get_optimizer_params(optimizer_name)
+    lr_used = lr if lr is not None else opt_defaults["lr"]
     
     start_time = datetime.now()
     
@@ -125,7 +149,10 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
                 testloader=testloader,
                 epochs=epochs,
                 run_id=run,
-                device=device
+                device=device,
+                num_classes=num_classes,
+                optimizer_name=optimizer_name,
+                lr=lr,
             )
             all_results.append(result)
             best_accs.append(result['best_acc'])
@@ -149,6 +176,9 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
             'epochs': epochs,
             'num_runs': num_runs,
             'runs_completed': runs_completed,
+            'optimizer': optimizer_name,
+            'lr': lr_used,
+            'weight_decay': opt_defaults.get("weight_decay"),
             'param_count': all_results[0]['param_count'] if all_results else None,
             'best_acc_mean': best_acc_mean,
             'best_acc_std': best_acc_std,
@@ -190,6 +220,9 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
             'epochs': epochs,
             'num_runs': num_runs,
             'runs_completed': runs_completed,
+            'optimizer': optimizer_name,
+            'lr': lr_used,
+            'weight_decay': opt_defaults.get("weight_decay"),
             'param_count': all_results[0]['param_count'] if all_results else None,
             'best_acc_mean': best_acc_mean,
             'best_acc_std': best_acc_std,
@@ -244,6 +277,9 @@ def retrain_model(model_path: str, epochs: int = 300, num_runs: int = 10,
         'epochs': epochs,
         'num_runs': num_runs,
         'runs_completed': len(all_results),
+        'optimizer': optimizer_name,
+        'lr': lr_used,
+        'weight_decay': opt_defaults.get("weight_decay"),
         'param_count': all_results[0]['param_count'] if all_results else None,
         'best_acc_mean': best_acc_mean,
         'best_acc_std': best_acc_std,
@@ -274,12 +310,15 @@ def main():
     parser = argparse.ArgumentParser(description='Retrain a model structure multiple times and compute average performance')
     parser.add_argument('model_path', type=str, help='Path to the .pth model file')
     parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs per run (default: 300)')
-    parser.add_argument('--runs', type=int, default=3, help='Number of training runs (default: 10)')
+    parser.add_argument('--runs', type=int, default=3, help='Number of training runs (default: 3)')
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100'], 
                         help='Dataset to use (default: cifar10)')
     parser.add_argument('--device', type=str, default=None, choices=['cuda', 'cpu'],
                         help='Device to use for training (default: auto)')
     parser.add_argument('--no-save', action='store_true', help='Do not save results to file')
+    parser.add_argument('--optimizer', type=str, default=None, choices=config.OPTIMIZER_OPTIONS,
+                        help='Optimizer to use (default: config.OPTIMIZER)')
+    parser.add_argument('--lr', type=float, default=None, help='Learning rate override (default: optimizer preset)')
     
     args = parser.parse_args()
     
@@ -289,7 +328,9 @@ def main():
         num_runs=args.runs,
         dataset=args.dataset,
         device=args.device,
-        save_results=not args.no_save
+        save_results=not args.no_save,
+        optimizer=args.optimizer,
+        lr=args.lr,
     )
 
 

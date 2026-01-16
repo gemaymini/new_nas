@@ -27,7 +27,9 @@ from core.search_space import population_initializer
 from search.mutation import mutation_operator, selection_operator, crossover_operator
 from engine.evaluator import fitness_evaluator, FinalEvaluator, clear_gpu_memory
 from models.network import NetworkBuilder
+from utils.generation import generate_valid_child
 from utils.logger import logger
+from utils.constraints import update_param_bounds_for_dataset
 
 rcParams['font.family'] = 'DejaVu Sans'
 rcParams['axes.unicode_minus'] = True
@@ -97,26 +99,24 @@ class ThreeStageEA:
         return parents[0], parents[1]
     
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        child = None
-        
-        if random.random() < config.PROB_CROSSOVER:
-            c1, c2, _ = crossover_operator.crossover(parent1, parent2)
-            child = random.choice([c1, c2])
-        else:
-            child = random.choice([parent1, parent2]).copy()
-        
-        if random.random() < config.PROB_MUTATION:
-            child = mutation_operator.mutate(child)
-        
-        if not Encoder.validate_encoding(child.encoding):
+        def repair_fn(child: Individual) -> Individual:
             for _ in range(20):
-                child = mutation_operator.mutate(random.choice([parent1, parent2]))
-                if Encoder.validate_encoding(child.encoding):
-                    break
-            else:
-                child = random.choice([parent1, parent2]).copy()
-        
-        return child
+                candidate = mutation_operator.mutate(random.choice([parent1, parent2]))
+                if Encoder.validate_encoding(candidate.encoding):
+                    return candidate
+            return random.choice([parent1, parent2]).copy()
+
+        return generate_valid_child(
+            parent1=parent1,
+            parent2=parent2,
+            crossover_fn=crossover_operator.crossover,
+            mutation_fn=mutation_operator.mutate,
+            repair_fn=repair_fn,
+            resample_fn=population_initializer.create_valid_individual,
+            crossover_prob=config.PROB_CROSSOVER,
+            mutation_prob=config.PROB_MUTATION,
+            max_attempts=50,
+        )
     
     def run(self, evaluator: FinalEvaluator = None) -> List[ModelInfo]:
         logger.info("=" * 60)
@@ -252,26 +252,24 @@ class TraditionalEA:
         return tournament[0], tournament[1]
     
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
-        child = None
-        
-        if random.random() < config.PROB_CROSSOVER:
-            c1, c2, _ = crossover_operator.crossover(parent1, parent2)
-            child = random.choice([c1, c2])
-        else:
-            child = random.choice([parent1, parent2]).copy()
-        
-        if random.random() < config.PROB_MUTATION:
-            child = mutation_operator.mutate(child)
-        
-        if not Encoder.validate_encoding(child.encoding):
+        def repair_fn(child: Individual) -> Individual:
             for _ in range(20):
-                child = mutation_operator.mutate(random.choice([parent1, parent2]))
-                if Encoder.validate_encoding(child.encoding):
-                    break
-            else:
-                child = random.choice([parent1, parent2]).copy()
-        
-        return child
+                candidate = mutation_operator.mutate(random.choice([parent1, parent2]))
+                if Encoder.validate_encoding(candidate.encoding):
+                    return candidate
+            return random.choice([parent1, parent2]).copy()
+
+        return generate_valid_child(
+            parent1=parent1,
+            parent2=parent2,
+            crossover_fn=crossover_operator.crossover,
+            mutation_fn=mutation_operator.mutate,
+            repair_fn=repair_fn,
+            resample_fn=population_initializer.create_valid_individual,
+            crossover_prob=config.PROB_CROSSOVER,
+            mutation_prob=config.PROB_MUTATION,
+            max_attempts=50,
+        )
     
     def _evaluate_fitness(self, ind: Individual, evaluator: FinalEvaluator) -> float:
         try:
@@ -566,6 +564,11 @@ def save_experiment_results(three_stage_models: List[ModelInfo],
 
 
 def run_experiment(args):
+    if args.dataset:
+        config.FINAL_DATASET = args.dataset
+    if args.optimizer:
+        config.OPTIMIZER = args.optimizer
+    update_param_bounds_for_dataset(config.FINAL_DATASET)
     
     logger.info("=" * 70)
     logger.info("         Three Algorithm Comparison Experiment")
@@ -774,6 +777,20 @@ def main():
         "--quick_test",
         action="store_true",
         help="Quick test mode with reduced evaluations and epochs",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default=None,
+        choices=["cifar10", "cifar100"],
+        help="Dataset to use (default: config.FINAL_DATASET)",
+    )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default=None,
+        choices=config.OPTIMIZER_OPTIONS,
+        help="Optimizer to use (default: config.OPTIMIZER)",
     )
 
     args = parser.parse_args()

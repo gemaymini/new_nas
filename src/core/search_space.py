@@ -6,6 +6,7 @@ import random
 from typing import List, Optional
 from configuration.config import config
 from core.encoding import Encoder, Individual, BlockParams
+from utils.constraints import evaluate_encoding_params
 
 
 class SearchSpace:
@@ -93,9 +94,18 @@ class PopulationInitializer:
     def create_valid_individual(self) -> Optional[Individual]:
         while True:
             encoding = self._create_constrained_encoding()
-            if Encoder.validate_encoding(encoding):
-                return Individual(encoding)
-            print(f"WARN: invalid individual; resampling encoding={encoding}")
+            if not Encoder.validate_encoding(encoding):
+                print(f"WARN: invalid individual; resampling encoding={encoding}")
+                continue
+
+            ok, reason, param_count = evaluate_encoding_params(encoding)
+            if not ok:
+                print(f"WARN: param bounds failed ({reason}); resampling")
+                continue
+
+            ind = Individual(encoding)
+            ind.param_count = param_count
+            return ind
 
     def _create_constrained_encoding(self) -> List[int]:
         max_downsampling = Encoder.get_max_downsampling()
@@ -116,15 +126,16 @@ class PopulationInitializer:
                 # Only the last block in a unit may use concat skips.
                 is_last_block = block_idx == block_num - 1
                 # Try to generate valid block params, up to 10 attempts.
+                accepted = False
                 for _ in range(10):
                     block_params = self.search_space.sample_block_params(
                         allow_concat=is_last_block
                     )
 
-                    if downsampling_count >= max_downsampling and block_params.pool_stride == 2:
+                    final_stride = block_params.pool_stride
+                    if downsampling_count >= max_downsampling and final_stride == 2:
                         block_params.pool_stride = 1
-                    elif block_params.pool_stride == 2:
-                        downsampling_count += 1
+                        final_stride = 1
 
                     out_channels = block_params.out_channels * block_params.expansion
                     if block_params.skip_type == 1:  # concat
@@ -135,13 +146,33 @@ class PopulationInitializer:
                     if final_channels <= config.MAX_CHANNELS:
                         current_channels = final_channels
                         encoding.extend(block_params.to_list())
+                        if final_stride == 2:
+                            downsampling_count += 1
+                        accepted = True
                         break
-                else:
-                    # Fall back to add skip if sampling fails repeatedly.
-                    block_params.skip_type = 0
-                    final_channels = out_channels
-                    current_channels = final_channels
-                    encoding.extend(block_params.to_list())
+                if accepted:
+                    continue
+
+                # Fall back to add skip if sampling fails repeatedly.
+                if block_params.pool_stride == 2 and downsampling_count >= max_downsampling:
+                    block_params.pool_stride = 1
+                block_params.skip_type = 0
+
+                # Ensure fallback channels do not blow up concat limits.
+                max_allowed = max(
+                    c for c in self.search_space.channel_options
+                    if c * block_params.expansion <= config.MAX_CHANNELS
+                )
+                if block_params.out_channels * block_params.expansion > config.MAX_CHANNELS:
+                    block_params.out_channels = max_allowed
+
+                out_channels = block_params.out_channels * block_params.expansion
+                final_channels = out_channels
+                current_channels = final_channels
+                final_stride = block_params.pool_stride
+                if final_stride == 2:
+                    downsampling_count += 1
+                encoding.extend(block_params.to_list())
 
         return encoding
 

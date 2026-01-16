@@ -16,6 +16,7 @@ sys.path.append(str(PROJECT_ROOT))
 from configuration.config import config
 from search.evolution import AgingEvolutionNAS
 from utils.logger import logger, tb_logger
+from utils.constraints import update_param_bounds_for_dataset
 
 
 def set_seed(seed: int):
@@ -66,7 +67,8 @@ def main():
     args = parse_args()
     set_seed(args.seed)
     config.FINAL_DATASET = args.dataset
-    config.OPTIMIZER = args.optimizer
+    # Some callers/tests may not provide optimizer; fall back to current config default.
+    config.OPTIMIZER = getattr(args, "optimizer", config.OPTIMIZER)
 
     if args.dataset == "imagenet":
         config.IMAGENET_ROOT = args.imagenet_root
@@ -85,6 +87,7 @@ def main():
     logger.info(f"Dataset: {config.FINAL_DATASET}, Num Classes: {config.NTK_NUM_CLASSES}")
     logger.info(f"Input Size: {config.NTK_INPUT_SIZE}")
     logger.info(f"Optimizer: {config.OPTIMIZER}")
+    update_param_bounds_for_dataset(config.FINAL_DATASET)
 
     from engine.evaluator import fitness_evaluator
     fitness_evaluator.reset()

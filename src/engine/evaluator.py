@@ -12,10 +12,12 @@ import matplotlib.pyplot as plt
 from typing import Tuple, List
 from configuration.config import config
 from core.encoding import Individual, Encoder
+from core.search_space import population_initializer
 from models.network import NetworkBuilder
 from utils.logger import logger
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer
+from utils.constraints import check_param_bounds, evaluate_encoding_params
 
 
 def clear_gpu_memory():
@@ -39,7 +41,6 @@ class NTKEvaluator:
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
         self.device = device or config.DEVICE
-        self.param_threshold = config.NTK_PARAM_THRESHOLD
         self.dataset = dataset or config.FINAL_DATASET
 
         self.recalbn = recalbn
@@ -79,7 +80,7 @@ class NTKEvaluator:
         train_mode: bool = True,
     ) -> float:
         """Compute NTK condition number for a single network."""
-        device = self.device if self.device == "cpu" else 0
+        device = torch.device(self.device)
         if train_mode:
             network.train()
         else:
@@ -141,12 +142,6 @@ class NTKEvaluator:
     def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
         """Compute NTK score by averaging multiple runs."""
         try:
-            if param_count and param_count > self.param_threshold:
-                logger.warning(
-                    f"Skipping NTK: params {param_count} > threshold {self.param_threshold}"
-                )
-                return 100000.0
-
             network = network.to(self.device)
 
             if self.recalbn > 0:
@@ -169,14 +164,57 @@ class NTKEvaluator:
             clear_gpu_memory()
             return 100000.0
 
-    def evaluate_individual(self, individual: Individual) -> float:
+    def evaluate_individual(self, individual: Individual, param_count: int = None) -> float:
         try:
-            network = NetworkBuilder.build_from_individual(
-                individual,
-                input_channels=self.input_size[0],
-                num_classes=self.num_classes,
-            )
-            param_count = network.get_param_count()
+            attempts = 0
+            while True:
+                # Prefer existing param_count; otherwise defer to built network.
+                current_param_count = param_count if param_count is not None else getattr(individual, "param_count", None)
+                if current_param_count is not None:
+                    ok, reason = check_param_bounds(current_param_count)
+                    if not ok:
+                        attempts += 1
+                        if attempts > 10:
+                            logger.error(f"Too many resample attempts for individual {individual.id}; returning penalty.")
+                            individual.fitness = 100000.0
+                            return individual.fitness
+                        logger.warning(f"Resampling individual {individual.id} for param bounds: {reason}")
+                        replacement = population_initializer.create_valid_individual()
+                        replacement.id = individual.id
+                        individual.encoding = replacement.encoding
+                        individual.op_history = getattr(replacement, "op_history", [])
+                        param_count = getattr(replacement, "param_count", None)
+                        continue
+
+                network = NetworkBuilder.build_from_individual(
+                    individual,
+                    input_channels=self.input_size[0],
+                    num_classes=self.num_classes,
+                )
+
+                if current_param_count is None:
+                    current_param_count = network.get_param_count()
+                    ok, reason = check_param_bounds(current_param_count)
+                    if not ok:
+                        attempts += 1
+                        del network
+                        clear_gpu_memory()
+                        if attempts > 10:
+                            logger.error(f"Too many resample attempts for individual {individual.id}; returning penalty.")
+                            individual.fitness = 100000.0
+                            return individual.fitness
+                        logger.warning(f"Resampling individual {individual.id} for param bounds: {reason}")
+                        replacement = population_initializer.create_valid_individual()
+                        replacement.id = individual.id
+                        individual.encoding = replacement.encoding
+                        individual.op_history = getattr(replacement, "op_history", [])
+                        param_count = getattr(replacement, "param_count", None)
+                        continue
+
+                # At this point param count is valid and network is built.
+                param_count = current_param_count
+                break
+
             individual.param_count = param_count
 
             score = self.compute_ntk_score(network, param_count)
@@ -294,6 +332,7 @@ class FinalEvaluator:
     def evaluate_individual(self, individual: Individual, epochs: int = None) -> Tuple[float, dict]:
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
+        is_short_train = epochs <= config.SHORT_TRAIN_EPOCHS
 
         logger.info(f"Training individual {individual.id} for {epochs} epochs...")
         network = NetworkBuilder.build_from_individual(
@@ -302,15 +341,34 @@ class FinalEvaluator:
         param_count = network.get_param_count()
         Encoder.print_architecture(individual.encoding)
 
+        ok, reason = check_param_bounds(param_count)
+        if not ok:
+            logger.warning(f"Skipping training: {reason}")
+            del network
+            clear_gpu_memory()
+            result = {
+                "individual_id": individual.id,
+                "param_count": param_count,
+                "best_accuracy": 0.0,
+                "train_time": 0.0,
+                "history": [],
+                "encoding": individual.encoding,
+                "model_path": None,
+                "plot_path": None,
+                "skipped": True,
+                "skip_reason": reason,
+            }
+            return 0.0, result
+
         start_time = time.time()
         best_acc, history = self.trainer.train_network(
             network, self.trainloader, self.testloader, epochs
         )
         train_time = time.time() - start_time
 
-        save_dir = os.path.join(config.CHECKPOINT_DIR, "final_models")
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f"model_{individual.id}_acc{best_acc:.2f}.pth")
+        model_dir = config.SHORT_TRAIN_MODEL_DIR if is_short_train else config.FULL_TRAIN_MODEL_DIR
+        os.makedirs(model_dir, exist_ok=True)
+        save_path = os.path.join(model_dir, f"model_{individual.id}_acc{best_acc:.2f}.pth")
 
         save_dict = {
             "state_dict": network.state_dict(),
@@ -323,7 +381,11 @@ class FinalEvaluator:
         logger.info(f"Saved model to {save_path}")
         logger.info(f"Model {individual.id} Architecture Encoding: {individual.encoding}")
 
-        plot_dir = os.path.join(config.LOG_DIR, "training_curves")
+        plot_root = model_dir
+        if is_short_train:
+            plot_dir = os.path.join(plot_root, "short_training_curves")
+        else:
+            plot_dir = os.path.join(plot_root, "full_training_curves")
         try:
             plot_path = self.plot_training_history(
                 history=history,
@@ -400,7 +462,32 @@ class FitnessEvaluator:
 
     def evaluate_individual(self, individual: Individual) -> float:
         """Evaluate NTK fitness for a single individual."""
-        return self.ntk_evaluator.evaluate_individual(individual)
+        attempts = 0
+        while True:
+            ok, reason, param_count = evaluate_encoding_params(individual.encoding)
+            if ok:
+                individual.param_count = param_count
+                break
+
+            attempts += 1
+            logger.warning(f"Resampling individual {individual.id} for param bounds: {reason}")
+            try:
+                replacement = population_initializer.create_valid_individual()
+                replacement.id = individual.id
+                individual.encoding = replacement.encoding
+                individual.op_history = getattr(replacement, "op_history", [])
+                individual.param_count = getattr(replacement, "param_count", None)
+            except Exception as e:
+                logger.error(f"Resample failed; returning penalty fitness. Reason: {e}")
+                individual.fitness = 100000.0
+                return individual.fitness
+
+            if attempts >= 10:
+                logger.error("Too many resample attempts; returning penalty fitness.")
+                individual.fitness = 100000.0
+                return individual.fitness
+
+        return self.ntk_evaluator.evaluate_individual(individual, param_count=individual.param_count)
 
     def evaluate_population_ntk(self, population: List[Individual], show_progress: bool = True):
         total = len(population)

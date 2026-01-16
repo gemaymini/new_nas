@@ -17,8 +17,9 @@ from core.encoding import Individual
 from engine.trainer import NetworkTrainer
 from data.dataset import DatasetLoader
 from utils.logger import logger
+from utils.constraints import update_param_bounds_for_dataset
 
-def continue_training(model_path: str, epochs: int, lr: float = None):
+def continue_training(model_path: str, epochs: int, lr: float = None, dataset: str = None):
     """
     Load a model from .pth and continue training.
     """
@@ -44,6 +45,11 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
     # Create dummy individual for NetworkBuilder
     ind = Individual(encoding)
     
+    # Determine dataset
+    if dataset:
+        config.FINAL_DATASET = dataset
+    update_param_bounds_for_dataset(config.FINAL_DATASET)
+
     # Determine classes based on config or inference? 
     # Usually config.FINAL_DATASET determines the dataset we train on.
     if config.FINAL_DATASET == 'cifar10':
@@ -82,16 +88,12 @@ def continue_training(model_path: str, epochs: int, lr: float = None):
         f"lr={lr_display}",
         f"weight_decay={opt_defaults['weight_decay']}",
     ]
-    if optimizer_name in ("adamw", "adam", "radam"):
+    if optimizer_name == "adamw":
         hyper_parts.append(f"betas={opt_defaults.get('betas')}")
         hyper_parts.append(f"eps={opt_defaults.get('eps', config.ADAMW_EPS)}")
     elif optimizer_name == "sgd":
         hyper_parts.append(f"momentum={opt_defaults.get('momentum')}")
         hyper_parts.append(f"nesterov={opt_defaults.get('nesterov')}")
-    elif optimizer_name == "rmsprop":
-        hyper_parts.append(f"alpha={opt_defaults.get('alpha')}")
-        hyper_parts.append(f"momentum={opt_defaults.get('momentum')}")
-        hyper_parts.append(f"eps={opt_defaults.get('eps', config.ADAMW_EPS)}")
     hyper_parts.append(f"warmup_epochs={opt_defaults.get('warmup_epochs', 0)}")
     print("INFO: hyperparams " + " ".join(hyper_parts))
     
@@ -142,9 +144,16 @@ if __name__ == "__main__":
         choices=config.OPTIMIZER_OPTIONS,
         help='Optimizer to use (default: config value)'
     )
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default=None,
+        choices=['cifar10', 'cifar100'],
+        help='Dataset to use (default: config.FINAL_DATASET)'
+    )
     
     args = parser.parse_args()
     
     if args.optimizer is not None:
         config.OPTIMIZER = args.optimizer
-    continue_training(args.model_path, args.epochs, args.lr)
+    continue_training(args.model_path, args.epochs, args.lr, dataset=args.dataset)

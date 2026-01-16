@@ -14,29 +14,29 @@ class Config:
     DATA_DIR = os.path.join(BASE_DIR, "data")
 
     # ==================== Evolution parameters ====================
-    POPULATION_SIZE = 200          # Aging Evolution queue size
-    MAX_GEN = 5000                 # Total individuals evaluated in search
+    POPULATION_SIZE = 50          # Aging Evolution queue size
+    MAX_GEN = 2000                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
     # ==================== Screening/training pipeline ====================
-    HISTORY_TOP_N1 = 10            # Stage 1: Top N1 by NTK
-    SHORT_TRAIN_EPOCHS = 20        # Stage 1 short training epochs
-    HISTORY_TOP_N2 = 5             # Stage 2: Top N2 by validation accuracy
-    FULL_TRAIN_EPOCHS = 600        # Final training epochs
+    HISTORY_TOP_N1 = 20            # Stage 1: Top N1 by NTK
+    SHORT_TRAIN_EPOCHS = 30        # Stage 1 short training epochs
+    HISTORY_TOP_N2 = 3             # Stage 2: Top N2 by validation accuracy
+    FULL_TRAIN_EPOCHS = 500        # Final training epochs
 
     # ==================== Crossover/mutation ====================
     PROB_CROSSOVER = 0.5           # Crossover probability
     PROB_MUTATION = 0.5            # Mutation probability
 
     # ==================== Search space ====================
-    MIN_UNIT_NUM = 2               # Min unit count
-    MAX_UNIT_NUM = 4               # Max unit count
+    MIN_UNIT_NUM = 3               # Min unit count (keep small for flexible search/testing)
+    MAX_UNIT_NUM = 5               # Max unit count
     MIN_BLOCK_NUM = 2              # Min blocks per unit
     MAX_BLOCK_NUM = 4              # Max blocks per unit
 
-    CHANNEL_OPTIONS = [64, 128, 256]
-    GROUP_OPTIONS = [4, 8, 16]
+    CHANNEL_OPTIONS = [64, 128, 256, 512,1024]
+    GROUP_OPTIONS = [8, 16, 32]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
@@ -71,76 +71,62 @@ class Config:
     NTK_BATCH_SIZE = 64
     NTK_INPUT_SIZE = (3, 32, 32)
     NTK_NUM_CLASSES = 10
-    NTK_PARAM_THRESHOLD = 10000000  # Skip overly large models
+    # Parameter count constraints
+    MIN_PARAM_COUNT = 2_000_000               # Minimum allowed model parameters
+    MAX_PARAM_COUNT = 10_000_000      # Maximum allowed model parameters
+    NTK_PARAM_THRESHOLD = MAX_PARAM_COUNT  # Alias for legacy usage
+    # Optional per-dataset param bounds (override MIN/MAX when provided)
+    DATASET_PARAM_BOUNDS = {
+        "cifar10": {"min": 2_000_000, "max": 10_000_000},
+        "cifar100": {"min": 4_000_000, "max": 10_000_000},
+        "imagenet": {"min": 6_000_000, "max": 20_000_000},
+    }
 
     # ==================== Training ====================
     DEVICE = "cuda"
-    BATCH_SIZE = 128
+    BATCH_SIZE = 256
 
     # Optimizer selection and hyperparameters (CIFAR defaults, batch=128)
-    OPTIMIZER_OPTIONS = ["adamw", "sgd", "radam", "adam", "rmsprop"]
-    OPTIMIZER = "adamw"  # Options: adamw, sgd, radam, adam, rmsprop
+    OPTIMIZER_OPTIONS = ["adamw", "sgd"]
+    OPTIMIZER = "adamw"
 
-    # Adam-family settings
-    ADAMW_BETAS = (0.9, 0.98)
+    # AdamW settings
+    ADAMW_BETAS = (0.9, 0.999)
     ADAMW_EPS = 1e-8
 
     # SGD settings
     SGD_MOMENTUM = 0.9
     SGD_NESTEROV = True
 
-    # RMSprop settings
-    RMSPROP_ALPHA = 0.99
-    RMSPROP_MOMENTUM = 0.9
-
     # Optimizer-specific recommended defaults
     OPTIMIZER_DEFAULTS = {
         "adamw": {
-            "lr": 3e-4,
-            "weight_decay": 5e-3,
+            "lr": 6e-4,
+            "weight_decay": 2e-3,
             "betas": ADAMW_BETAS,
             "eps": ADAMW_EPS,
-            "warmup_epochs": 5,
-        },
-        "adam": {
-            "lr": 3e-4,
-            "weight_decay": 5e-3,
-            "betas": ADAMW_BETAS,
-            "eps": ADAMW_EPS,
-            "warmup_epochs": 5,
+            "warmup_epochs": 10,
         },
         "sgd": {
-            "lr": 0.1,
+            "lr": 0.05,
             "weight_decay": 5e-4,
             "momentum": 0.9,
             "nesterov": True,
             "warmup_epochs": 5,
         },
-        "radam": {
-            "lr": 5e-4,
-            "weight_decay": 5e-3,
-            "betas": (0.9, 0.999),
-            "eps": ADAMW_EPS,
-            "warmup_epochs": 5,
-        },
-        "rmsprop": {
-            "lr": 1e-3,
-            "weight_decay": 1e-4,
-            "alpha": RMSPROP_ALPHA,
-            "momentum": RMSPROP_MOMENTUM,
-            "eps": ADAMW_EPS,
-            "warmup_epochs": 0,
-        },
     }
 
     # ==================== Early stopping ====================
     EARLY_STOPPING_ENABLED = True   # Enable early stopping
-    EARLY_STOPPING_PATIENCE = 50    # Epochs without improvement before stop
+    EARLY_STOPPING_PATIENCE = 75    # Epochs without improvement before stop
     EARLY_STOPPING_MIN_DELTA = 0.01 # Minimum improvement (%) to reset patience
+
+    # ==================== LR scheduler ====================
+    COSINE_MIN_LR_RATIO = 0.05      # Final LR = base_lr * ratio
 
     # ==================== ImageNet ====================
     IMAGENET_ROOT = os.path.join(DATA_DIR, "imagenet")  # Dataset root
-    IMAGENET_BATCH_SIZE = 64          # Batch size (memory-aware)
+    IMAGENET_BATCH_SIZE = 128          # Batch size (memory-aware)
     IMAGENET_INPUT_SIZE = 224         # Input resolution
     IMAGENET_NUM_CLASSES = 1000       # Class count
 
@@ -155,6 +141,8 @@ class Config:
     LOG_LEVEL = "INFO"
     SAVE_CHECKPOINT = True
     CHECKPOINT_DIR = os.path.join(BASE_DIR, "checkpoints")
+    SHORT_TRAIN_MODEL_DIR = os.path.join(CHECKPOINT_DIR, "short_train_models")
+    FULL_TRAIN_MODEL_DIR = os.path.join(CHECKPOINT_DIR, "full_train_models")
 
     # ==================== TensorBoard ====================
     USE_TENSORBOARD = True
@@ -171,7 +159,7 @@ class Config:
 
     # ==================== Misc ====================
     RANDOM_SEED = random.randint(0, 2**32 - 1)
-    NUM_WORKERS = 8
+    NUM_WORKERS = 4
 
     def get_search_space_summary(self) -> str:
         """Return a short search-space summary string."""

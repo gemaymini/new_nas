@@ -22,6 +22,21 @@ class NetworkTrainer:
             self.device = "cpu"
             logger.warning("CUDA not available, using CPU for training")
 
+    def _get_param_groups(self, model: nn.Module, weight_decay: float):
+        """Separate parameters to avoid decaying biases/norm layers."""
+        decay_params, no_decay_params = [], []
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if param.dim() == 1 or name.endswith(".bias") or "bn" in name.lower() or "norm" in name.lower():
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+        return [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ]
+
     def _build_optimizer(
         self,
         model: nn.Module,
@@ -32,18 +47,13 @@ class NetworkTrainer:
         eps: float,
         momentum: float = None,
         nesterov: bool = None,
-        alpha: float = None,
     ) -> optim.Optimizer:
         """Create optimizer based on config choice."""
         name = optimizer_name.lower()
-        params = model.parameters()
+        params = self._get_param_groups(model, weight_decay)
 
         if name == "adamw":
             return optim.AdamW(params, lr=lr, weight_decay=weight_decay, betas=betas, eps=eps)
-        if name == "adam":
-            return optim.Adam(params, lr=lr, weight_decay=weight_decay, betas=betas, eps=eps)
-        if name == "radam":
-            return optim.RAdam(params, lr=lr, weight_decay=weight_decay, betas=betas, eps=eps)
         if name == "sgd":
             return optim.SGD(
                 params,
@@ -51,16 +61,6 @@ class NetworkTrainer:
                 weight_decay=weight_decay,
                 momentum=momentum if momentum is not None else config.SGD_MOMENTUM,
                 nesterov=nesterov if nesterov is not None else config.SGD_NESTEROV,
-            )
-        if name == "rmsprop":
-            rmsprop_eps = eps if eps is not None else config.ADAMW_EPS
-            return optim.RMSprop(
-                params,
-                lr=lr,
-                weight_decay=weight_decay,
-                momentum=momentum if momentum is not None else config.RMSPROP_MOMENTUM,
-                alpha=alpha if alpha is not None else config.RMSPROP_ALPHA,
-                eps=rmsprop_eps,
             )
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
@@ -170,7 +170,7 @@ class NetworkTrainer:
 
         momentum = optimizer_defaults.get("momentum", None)
         nesterov = optimizer_defaults.get("nesterov", None)
-        alpha = optimizer_defaults.get("alpha", None)
+        eta_min = lr * getattr(config, "COSINE_MIN_LR_RATIO", 0.0)
 
         patience = config.EARLY_STOPPING_PATIENCE
         min_delta = config.EARLY_STOPPING_MIN_DELTA
@@ -190,35 +190,36 @@ class NetworkTrainer:
             eps,
             momentum=momentum,
             nesterov=nesterov,
-            alpha=alpha,
         )
 
         if warmup_epochs > 0 and warmup_epochs < epochs:
             warmup = lr_scheduler.LambdaLR(
                 optimizer, lr_lambda=lambda epoch: float(epoch + 1) / float(warmup_epochs)
             )
-            cosine = lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs - warmup_epochs))
+            cosine = lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=max(1, epochs - warmup_epochs), eta_min=eta_min
+            )
             scheduler = lr_scheduler.SequentialLR(
                 optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs]
             )
         else:
-            scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
+            scheduler = lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=max(1, epochs), eta_min=eta_min
+            )
 
         hyper_parts = [
             f"optimizer={optimizer_name}",
             f"lr={lr}",
             f"weight_decay={weight_decay}",
         ]
-        if optimizer_name in ("adamw", "adam", "radam"):
+        if optimizer_name == "adamw":
             hyper_parts.append(f"betas={betas}")
             hyper_parts.append(f"eps={eps}")
         elif optimizer_name == "sgd":
             hyper_parts.append(f"momentum={momentum}")
             hyper_parts.append(f"nesterov={nesterov}")
-        elif optimizer_name == "rmsprop":
-            hyper_parts.append(f"alpha={alpha}")
-            hyper_parts.append(f"momentum={momentum}")
         hyper_parts.append(f"warmup_epochs={warmup_epochs}")
+        hyper_parts.append(f"eta_min={eta_min}")
         logger.info("Optimizer setup: " + " ".join(hyper_parts))
 
         history = []
