@@ -24,18 +24,37 @@ class MutationOperator:
         self.prob_delete_block = config.PROB_DELETE_BLOCK
         self.prob_modify_block = config.PROB_MODIFY_BLOCK
 
+    def _repair_channels(self, block_params_list: List[List]) -> None:
+        """
+        Scan and repair out_channels to strictly follow 64/1024 positional rules.
+        """
+        unit_num = len(block_params_list)
+        for unit_idx, unit_blocks in enumerate(block_params_list):
+            for bp in unit_blocks:
+                # Rule: 64 only in Unit 0
+                if unit_idx > 0 and bp.out_channels == 64:
+                    bp.out_channels = search_space.sample_channel(unit_idx, unit_num)
+                
+                # Rule: 1024 only in Last Unit
+                if unit_idx < unit_num - 1 and bp.out_channels == 1024:
+                    bp.out_channels = search_space.sample_channel(unit_idx, unit_num)
+
     def _enforce_concat_last(self, block_params_list: List[List]) -> None:
         """
         Ensure 'concat' skip type is ONLY present in the last block of a unit.
+        Also triggers channel repair.
         
         Args:
             block_params_list: Nested list of block parameters.
         """
+        # First repair channels since unit counts/positions might have changed
+        self._repair_channels(block_params_list)
+
         # Ensure concat skips appear only in the last block of each unit.
         for unit_blocks in block_params_list:
             last_idx = len(unit_blocks) - 1
             for idx, bp in enumerate(unit_blocks):
-                if idx != last_idx and bp.skip_type == 1:
+                if idx != last_idx and bp.skip_type == config.SKIP_TYPE_CONCAT:
                     bp.skip_type = search_space.sample_skip_type(allow_concat=False)
 
     def swap_blocks(self, encoding: List[int]) -> Tuple[List[int], Dict]:
@@ -71,6 +90,7 @@ class MutationOperator:
         idx1, idx2 = random.sample(range(unit_num), 2)
         block_nums[idx1], block_nums[idx2] = block_nums[idx2], block_nums[idx1]
         block_params_list[idx1], block_params_list[idx2] = block_params_list[idx2], block_params_list[idx1]
+        self._enforce_concat_last(block_params_list)
         detail = {
             "op": "swap_units",
             "applied": True,
@@ -86,12 +106,17 @@ class MutationOperator:
             return encoding, {"op": "add_unit", "applied": False, "reason": "max_unit_limit"}
         new_block_num = search_space.sample_block_num()
         new_blocks = [
-            search_space.sample_block_params(allow_concat=idx == new_block_num - 1)
+            search_space.sample_block_params(
+                allow_concat=idx == new_block_num - 1,
+                unit_idx=insert_pos,
+                total_units=unit_num + 1
+            )
             for idx in range(new_block_num)
         ]
         insert_pos = random.randint(0, unit_num)
         block_nums.insert(insert_pos, new_block_num)
         block_params_list.insert(insert_pos, new_blocks)
+        self._enforce_concat_last(block_params_list)
         detail = {
             "op": "add_unit",
             "applied": True,
@@ -109,7 +134,11 @@ class MutationOperator:
         unit_idx = random.choice(valid_units)
         insert_pos = random.randint(0, block_nums[unit_idx])
         allow_concat = insert_pos == block_nums[unit_idx]
-        new_block = search_space.sample_block_params(allow_concat=allow_concat)
+        new_block = search_space.sample_block_params(
+            allow_concat=allow_concat,
+            unit_idx=unit_idx,
+            total_units=unit_num
+        )
         block_params_list[unit_idx].insert(insert_pos, new_block)
         block_nums[unit_idx] += 1
         self._enforce_concat_last(block_params_list)
@@ -131,6 +160,7 @@ class MutationOperator:
         removed_blocks = block_params_list[delete_idx]
         del block_nums[delete_idx]
         del block_params_list[delete_idx]
+        self._enforce_concat_last(block_params_list)
         detail = {
             "op": "delete_unit",
             "applied": True,
@@ -168,56 +198,47 @@ class MutationOperator:
         # Only the last block in a unit may use concat skips.
         allow_concat = block_idx == block_nums[unit_idx] - 1
 
-        all_params = [
-            "out_channels", "groups", "pool_type", "pool_stride", "has_senet",
-            "activation_type", "dropout_rate", "skip_type", "kernel_size",
-            "expansion",
-        ]
+        # Define mapping of param name -> (getter, sampler)
+        # getter: lambda block: block.field
+        # sampler: lambda: search_space.sample_field(...)
+        # We process 'skip_type' specially due to allow_concat.
 
-        params_to_modify = random.sample(all_params, num_params_to_modify)
+        param_map = {
+            # "out_channels" handled separately
+            "groups": (lambda b: b.groups, search_space.sample_groups),
+            "pool_type": (lambda b: b.pool_type, search_space.sample_pool_type),
+            "pool_stride": (lambda b: b.pool_stride, search_space.sample_pool_stride),
+            "has_senet": (lambda b: b.has_senet, search_space.sample_senet),
+            "activation_type": (lambda b: b.activation_type, search_space.sample_activation),
+            "dropout_rate": (lambda b: b.dropout_rate, search_space.sample_dropout),
+            "kernel_size": (lambda b: b.kernel_size, search_space.sample_kernel_size),
+            "expansion": (lambda b: b.expansion, search_space.sample_expansion),
+        }
+
+        # Select params to modify excluding skip_type initially
+        available_keys = list(param_map.keys()) + ["skip_type", "out_channels"]
+        params_to_modify = random.sample(available_keys, num_params_to_modify)
         changes = []
 
         for param in params_to_modify:
-            if param == "out_channels":
-                new_value = search_space.sample_channel()
-                changes.append({"param": param, "old": old_block.out_channels, "new": new_value})
-                old_block.out_channels = new_value
-            elif param == "groups":
-                old_val = old_block.groups
-                old_block.groups = search_space.sample_groups()
-                changes.append({"param": param, "old": old_val, "new": old_block.groups})
-            elif param == "pool_type":
-                old_val = old_block.pool_type
-                old_block.pool_type = search_space.sample_pool_type()
-                changes.append({"param": param, "old": old_val, "new": old_block.pool_type})
-            elif param == "pool_stride":
-                old_val = old_block.pool_stride
-                old_block.pool_stride = search_space.sample_pool_stride()
-                changes.append({"param": param, "old": old_val, "new": old_block.pool_stride})
-            elif param == "has_senet":
-                old_val = old_block.has_senet
-                old_block.has_senet = search_space.sample_senet()
-                changes.append({"param": param, "old": old_val, "new": old_block.has_senet})
-            elif param == "activation_type":
-                old_val = old_block.activation_type
-                old_block.activation_type = search_space.sample_activation()
-                changes.append({"param": param, "old": old_val, "new": old_block.activation_type})
-            elif param == "dropout_rate":
-                old_val = old_block.dropout_rate
-                old_block.dropout_rate = search_space.sample_dropout()
-                changes.append({"param": param, "old": old_val, "new": old_block.dropout_rate})
-            elif param == "skip_type":
+            if param == "skip_type":
                 old_val = old_block.skip_type
-                old_block.skip_type = search_space.sample_skip_type(allow_concat=allow_concat)
-                changes.append({"param": param, "old": old_val, "new": old_block.skip_type})
-            elif param == "kernel_size":
-                old_val = old_block.kernel_size
-                old_block.kernel_size = search_space.sample_kernel_size()
-                changes.append({"param": param, "old": old_val, "new": old_block.kernel_size})
-            elif param == "expansion":
-                old_val = old_block.expansion
-                old_block.expansion = search_space.sample_expansion()
-                changes.append({"param": param, "old": old_val, "new": old_block.expansion})
+                new_val = search_space.sample_skip_type(allow_concat=allow_concat)
+                old_block.skip_type = new_val
+                changes.append({"param": param, "old": old_val, "new": new_val})
+            elif param == "out_channels":
+                old_val = old_block.out_channels
+                new_val = search_space.sample_channel(unit_idx=unit_idx, total_units=unit_num)
+                old_block.out_channels = new_val
+                changes.append({"param": param, "old": old_val, "new": new_val})
+            else:
+                getter, sampler = param_map[param]
+                old_val = getter(old_block)
+                new_val = sampler()
+                
+                # Update attribute directly
+                setattr(old_block, param, new_val)
+                changes.append({"param": param, "old": old_val, "new": new_val})
 
         self._enforce_concat_last(block_params_list)
 
@@ -361,7 +382,11 @@ class CrossoverOperator:
                     return p_nums[idx], copy.deepcopy(p_params[idx])
                 nb = search_space.sample_block_num()
                 return nb, [
-                    search_space.sample_block_params(allow_concat=j == nb - 1)
+                    search_space.sample_block_params(
+                        allow_concat=j == nb - 1,
+                        unit_idx=idx,
+                        total_units=new_unit_num
+                    )
                     for j in range(nb)
                 ]
 
@@ -378,6 +403,10 @@ class CrossoverOperator:
                 c1_params.append(bp2)
                 c2_nums.append(bn1)
                 c2_params.append(bp1)
+
+        # Repair channels and skips for children
+        MutationOperator()._enforce_concat_last(c1_params)
+        MutationOperator()._enforce_concat_last(c2_params)
 
         child1 = Individual(Encoder.encode(new_unit_num, c1_nums, c1_params))
         child2 = Individual(Encoder.encode(new_unit_num, c2_nums, c2_params))

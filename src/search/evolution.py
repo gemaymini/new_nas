@@ -6,7 +6,7 @@ import random
 import os
 import pickle
 import time
-import threading
+
 import json
 import matplotlib.pyplot as plt
 from collections import deque
@@ -38,7 +38,6 @@ class AgingEvolutionNAS:
         # Population & history state.
         self.population = deque()
         self.history: List[Individual] = []
-        self.lock = threading.Lock()
 
         # Track unique encodings to skip duplicates.
         self.seen_encodings: set = set()
@@ -170,13 +169,6 @@ class AgingEvolutionNAS:
                 self.duplicate_count += 1
                 print("WARN: duplicate architecture, resampling")
                 continue
-
-            # Enforce param bounds before expensive eval/logging; resample instead of recording failure.
-            ok, reason, param_count = evaluate_encoding_params(child.encoding)
-            if not ok:
-                logger.warning(f"Resampling child: param bounds failed ({reason})")
-                continue
-            child.param_count = param_count
             break
 
         self._register_encoding(child.encoding)
@@ -199,10 +191,9 @@ class AgingEvolutionNAS:
 
         self.ntk_history.append((current_step, child.id, child.fitness, child.encoding.copy()))
 
-        with self.lock:
-            self.population.popleft()
-            self.population.append(child)
-            self.history.append(child)
+        self.population.popleft()
+        self.population.append(child)
+        self.history.append(child)
 
         if len(self.history) % 10 == 0:
             logger.info(

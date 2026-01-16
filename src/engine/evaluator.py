@@ -17,7 +17,7 @@ from models.network import NetworkBuilder
 from utils.logger import logger
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer
-from utils.constraints import check_param_bounds, evaluate_encoding_params
+
 
 
 def clear_gpu_memory():
@@ -48,8 +48,8 @@ class NTKEvaluator:
             num_classes (int, optional): Number of output classes.
             batch_size (int, optional): Batch size for NTK computation.
             device (str, optional): Computation device ('cuda' or 'cpu').
-            recalbn (int): Number of batches for BatchNorm recalibration (0 to disable).
-            num_batch (int): Number of batches to use for NTK calculation.
+            recalbn (int, optional): Number of batches for BatchNorm recalibration.
+            num_batch (int, optional): Number of batches to use for NTK calculation.
             dataset (str, optional): Dataset name.
         """
         self.input_size = input_size or config.NTK_INPUT_SIZE
@@ -58,8 +58,8 @@ class NTKEvaluator:
         self.device = device or config.DEVICE
         self.dataset = dataset or config.FINAL_DATASET
 
-        self.recalbn = recalbn
-        self.num_batch = num_batch
+        self.recalbn = recalbn if recalbn is not None else config.NTK_RECALBN
+        self.num_batch = num_batch if num_batch is not None else config.NTK_NUM_BATCH
 
         if self.device == "cuda" and not torch.cuda.is_available():
             self.device = "cpu"
@@ -103,7 +103,7 @@ class NTKEvaluator:
         train_mode: bool = True,
     ) -> float:
         """
-        Compute NTK condition number for a single network.
+        Compute NTK condition number for a single network using vectorized gradients.
 
         Args:
             network (nn.Module): The neural network.
@@ -120,37 +120,94 @@ class NTKEvaluator:
         else:
             network.eval()
 
+        # Try to use torch.func for vectorized computation (PyTorch 2.0+)
+        try:
+            from torch.func import functional_call, vmap, grad
+            HAS_TORCH_FUNC = True
+        except ImportError:
+            HAS_TORCH_FUNC = False
+            logger.warning("torch.func not found; falling back to slow loop-based NTK calculation.")
+
         grads = []
+        
+        # Prepare parameters for functional call if available
+        if HAS_TORCH_FUNC:
+            params = {k: v for k, v in network.named_parameters() if v.requires_grad}
+            
+            def fnet_single(params, x):
+                output = functional_call(network, params, (x.unsqueeze(0),))
+                return output.squeeze(0)
 
         for i, (inputs, _) in enumerate(xloader):
             if num_batch > 0 and i >= num_batch:
                 break
             inputs = inputs.to(device=device, non_blocking=True)
 
-            network.zero_grad()
-            logit = network(inputs)
-            if isinstance(logit, tuple):
-                logit = logit[1]
+            if HAS_TORCH_FUNC:
+                # Vectorized computation
+                # Compute gradients for the whole batch at once: (Batch, Params)
+                # functional_call expects a dict of params. 
+                # We need to trace gradients w.r.t these params.
+                
+                # We need a wrapper that returns the sum of logits or specific logit to differentiate
+                # But classical NTK for classification usually takes gradients of the output logit corresponding to the class,
+                # or simplified: gradients of the scalar output sum (if regression) or similar.
+                # Here, the original code did: logit[idx:idx+1].backward(torch.ones_like(...))
+                # This implies scalar sum of outputs for that sample (since it's a vector output, backward with ones sums gradients).
+                
 
-            for idx in range(inputs.size(0)):
-                logit[idx:idx + 1].backward(
-                    torch.ones_like(logit[idx:idx + 1]),
-                    retain_graph=True,
-                )
 
-                grad = []
-                for name, p in network.named_parameters():
-                    if "weight" in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach().clone())
-                if grad:
-                    grads.append(torch.cat(grad, -1))
+                # Correct functional approach for per-sample gradients:
+                # 1. Define function: params, single_input -> scalar_loss
+                def compute_loss(params, x):
+                    outputs = functional_call(network, params, (x.unsqueeze(0),))
+                    return outputs.sum() # Sum all logits as proxy target
 
+                # 2. Vectorize grad over the batch of inputs
+                batch_grads_dict = vmap(grad(compute_loss), in_dims=(None, 0))(params, inputs)
+                
+                # 3. Flatten and concatenate all parameter gradients for each sample
+                # batch_grads_dict is {param_name: tensor(Batch, ...)}
+                # We want (Batch, TotalParams)
+                batch_grads_list = [batch_grads_dict[k].flatten(start_dim=1) for k in batch_grads_dict]
+                batch_grads = torch.cat(batch_grads_list, dim=1) # (Batch, TotalParams)
+                grads.append(batch_grads)
+
+            else:
+                # Fallback: Slow loop
                 network.zero_grad()
+                logit = network(inputs)
+                if isinstance(logit, tuple):
+                    logit = logit[1]
+
+                for idx in range(inputs.size(0)):
+                    logit[idx:idx + 1].backward(
+                        torch.ones_like(logit[idx:idx + 1]),
+                        retain_graph=True,
+                    )
+
+                    grad_list = []
+                    for name, p in network.named_parameters():
+                        # Include all trainable parameters (weights + biases)
+                        if p.grad is not None and p.requires_grad:
+                            grad_list.append(p.grad.view(-1).detach().clone())
+                    
+                    if grad_list:
+                        grads.append(torch.cat(grad_list, -1))
+
+                    network.zero_grad()
 
         if len(grads) == 0:
             return 100000.0
 
-        grads_tensor = torch.stack(grads, 0)  # (N, C)
+        if HAS_TORCH_FUNC:
+             grads_tensor = torch.cat(grads, dim=0) # (TotalBatch, TotalParams)
+        else:
+             grads_tensor = torch.stack(grads, 0)
+
+        # Standardize assumption: If grads are too large, we might OOM on dot product.
+        # But for NTK proxy runs (small batch, few batches), it's usually fine.
+        
         ntk = torch.einsum("nc,mc->nm", [grads_tensor, grads_tensor])
 
         try:
@@ -173,13 +230,12 @@ class NTKEvaluator:
 
         return cond
 
-    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
+    def compute_ntk_score(self, network: nn.Module, num_runs: int = 5) -> float:
         """
         Compute NTK score by averaging multiple runs.
         
         Args:
             network (nn.Module): The model.
-            param_count (int, optional): Parameter count (unused in calculation, logged/checked elsewhere).
             num_runs (int): Number of independent NTK calculations to average.
 
         Returns:
@@ -208,50 +264,21 @@ class NTKEvaluator:
             clear_gpu_memory()
             return 100000.0
 
-    def evaluate_individual(self, individual: Individual, param_count: int = None) -> float:
+    def evaluate_individual(self, individual: Individual) -> float:
         try:
-            attempts = 0
-            while True:
-                # Prefer existing param_count; otherwise defer to built network.
-                current_param_count = param_count if param_count is not None else getattr(individual, "param_count", None)
-                if current_param_count is not None:
-                    ok, reason = check_param_bounds(current_param_count)
-                    if not ok:
-                        logger.warning(f"Individual {individual.id} param bounds failed: {reason}")
-                        individual.fitness = 100000.0
-                        return individual.fitness
-
-                network = NetworkBuilder.build_from_individual(
-                    individual,
-                    input_channels=self.input_size[0],
-                    num_classes=self.num_classes,
-                )
-
-                if current_param_count is None:
-                    current_param_count = network.get_param_count()
-                    ok, reason = check_param_bounds(current_param_count)
-                    if not ok:
-                        del network
-                        clear_gpu_memory()
-                        logger.warning(f"Individual {individual.id} param bounds failed after build: {reason}")
-                        individual.fitness = 100000.0
-                        return individual.fitness
-
-                # At this point param count is valid and network is built.
-                param_count = current_param_count
-                break
-
-            individual.param_count = param_count
-
-            score = self.compute_ntk_score(network, param_count)
-            fitness = score
-            individual.fitness = fitness
+            network = NetworkBuilder.build_from_individual(
+                individual,
+                input_channels=self.input_size[0],
+                num_classes=self.num_classes,
+            )
+            
+            individual.fitness = self.compute_ntk_score(network)
 
             del network
             clear_gpu_memory()
 
-            logger.log_evaluation(individual.id, "NTK", fitness, param_count)
-            return fitness
+            logger.log_evaluation(individual.id, "NTK", individual.fitness, individual.param_count)
+            return individual.fitness
 
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
@@ -390,27 +417,8 @@ class FinalEvaluator:
         network = NetworkBuilder.build_from_individual(
             individual, input_channels=3, num_classes=self.num_classes
         )
-        param_count = network.get_param_count()
+        param_count = individual.param_count
         Encoder.print_architecture(individual.encoding)
-
-        ok, reason = check_param_bounds(param_count)
-        if not ok:
-            logger.warning(f"Skipping training: {reason}")
-            del network
-            clear_gpu_memory()
-            result = {
-                "individual_id": individual.id,
-                "param_count": param_count,
-                "best_accuracy": 0.0,
-                "train_time": 0.0,
-                "history": [],
-                "encoding": individual.encoding,
-                "model_path": None,
-                "plot_path": None,
-                "skipped": True,
-                "skip_reason": reason,
-            }
-            return 0.0, result
 
         start_time = time.time()
         best_acc, history = self.trainer.train_network(
@@ -463,49 +471,7 @@ class FinalEvaluator:
         }
         return best_acc, result
 
-    def evaluate_top_individuals(
-        self,
-        population: List[Individual],
-        top_k: int = None,
-        epochs: int = None,
-    ) -> Tuple[Individual, List[dict]]:
-        """
-        Evaluate a batch of top individuals.
 
-        Args:
-            population (List[Individual]): List of candidates.
-            top_k (int, optional): Number of top candidates to evaluate.
-            epochs (int, optional): Training epochs.
-
-        Returns:
-            Tuple[Individual, List[dict]]: Best individual and list of all results.
-        """
-        if top_k is None:
-            top_k = config.HISTORY_TOP_N2
-        if epochs is None:
-            epochs = config.FULL_TRAIN_EPOCHS
-
-        sorted_pop = sorted(
-            population,
-            key=lambda x: x.fitness if x.fitness is not None else float("inf"),
-            reverse=False,
-        )
-        top_individuals = sorted_pop[:top_k]
-
-        results = []
-        best_individual = None
-        best_accuracy = 0.0
-
-        for idx, individual in enumerate(top_individuals):
-            print(f"INFO: evaluating individual {individual.id} ({idx + 1}/{top_k})")
-            acc, result = self.evaluate_individual(individual, epochs)
-            results.append(result)
-
-            if acc > best_accuracy:
-                best_accuracy = acc
-                best_individual = individual
-
-        return best_individual, results
 
 
 class FitnessEvaluator:
@@ -516,7 +482,7 @@ class FitnessEvaluator:
     def ntk_evaluator(self):
         """Lazy-init NTKEvaluator with current config."""
         if self._ntk_evaluator is None:
-            self._ntk_evaluator = NTKEvaluator(dataset=config.FINAL_DATASET)
+            self._ntk_evaluator = NTKEvaluator()
         return self._ntk_evaluator
 
     def reset(self):
@@ -525,31 +491,10 @@ class FitnessEvaluator:
 
     def evaluate_individual(self, individual: Individual) -> float:
         """Evaluate NTK fitness for a single individual."""
-        # Clean check of parameter bounds first.
-        ok, reason, param_count = evaluate_encoding_params(individual.encoding)
-        if not ok:
-            logger.warning(f"Individual {individual.id} invalid: {reason}. Returning penalty.")
-            individual.fitness = 100000.0
-            return individual.fitness
-            
-        individual.param_count = param_count
+        # Trust upstream validation.
         return self.ntk_evaluator.evaluate_individual(individual, param_count=individual.param_count)
 
-    def evaluate_population_ntk(self, population: List[Individual], show_progress: bool = True):
-        total = len(population)
-        clear_gpu_memory()
 
-        for idx, ind in enumerate(population):
-            if show_progress:
-                print(f"\rPROGRESS: NTK {idx+1}/{total}", end="", flush=True)
-            self.evaluate_individual(ind)
-
-            if (idx + 1) % 5 == 0:
-                clear_gpu_memory()
-
-        if show_progress:
-            print()
-        clear_gpu_memory()
 
 
 fitness_evaluator = FitnessEvaluator()

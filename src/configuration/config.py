@@ -15,15 +15,15 @@ class Config:
 
     # ==================== Evolution parameters ====================
     POPULATION_SIZE = 50          # Aging Evolution queue size
-    MAX_GEN = 2000                 # Total individuals evaluated in search
+    MAX_GEN = 1000                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
     # ==================== Screening/training pipeline ====================
     HISTORY_TOP_N1 = 20            # Stage 1: Top N1 by NTK
     SHORT_TRAIN_EPOCHS = 30        # Stage 1 short training epochs
-    HISTORY_TOP_N2 = 3             # Stage 2: Top N2 by validation accuracy
-    FULL_TRAIN_EPOCHS = 500        # Final training epochs
+    HISTORY_TOP_N2 = 5             # Stage 2: Top N2 by validation accuracy
+    FULL_TRAIN_EPOCHS = 300        # Final training epochs
 
     # ==================== Crossover/mutation ====================
     PROB_CROSSOVER = 0.5           # Crossover probability
@@ -35,7 +35,7 @@ class Config:
     MIN_BLOCK_NUM = 2              # Min blocks per unit
     MAX_BLOCK_NUM = 4              # Max blocks per unit
 
-    CHANNEL_OPTIONS = [64, 128, 256, 512,1024]
+    CHANNEL_OPTIONS = [64, 128, 256, 512, 1024]
     GROUP_OPTIONS = [8, 16, 32]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
@@ -46,7 +46,10 @@ class Config:
     # Dropout options
     DROPOUT_OPTIONS = [0.0, 0.1]
     # Skip connection types: 0=add, 1=concat, 2=none
-    SKIP_TYPE_OPTIONS = [0, 1, 2]
+    SKIP_TYPE_ADD = 0
+    SKIP_TYPE_CONCAT = 1
+    SKIP_TYPE_NONE = 2
+    SKIP_TYPE_OPTIONS = [SKIP_TYPE_ADD, SKIP_TYPE_CONCAT, SKIP_TYPE_NONE]
     # Convolution kernel size options
     KERNEL_SIZE_OPTIONS = [3, 5]
     # Block expansion options (out_channels = mid_channels * expansion)
@@ -71,6 +74,8 @@ class Config:
     NTK_BATCH_SIZE = 64
     NTK_INPUT_SIZE = (3, 32, 32)
     NTK_NUM_CLASSES = 10
+    NTK_NUM_BATCH = 5
+    NTK_RECALBN = 3
     # Parameter count constraints
     MIN_PARAM_COUNT = 2_000_000               # Minimum allowed model parameters
     MAX_PARAM_COUNT = 10_000_000      # Maximum allowed model parameters
@@ -118,7 +123,7 @@ class Config:
 
     # ==================== Early stopping ====================
     EARLY_STOPPING_ENABLED = True   # Enable early stopping
-    EARLY_STOPPING_PATIENCE = 75    # Epochs without improvement before stop
+    EARLY_STOPPING_PATIENCE = 50    # Epochs without improvement before stop
     EARLY_STOPPING_MIN_DELTA = 0.01 # Minimum improvement (%) to reset patience
 
     # ==================== LR scheduler ====================

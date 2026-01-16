@@ -97,6 +97,7 @@ class Individual:
         self.encoding = encoding if encoding is not None else []
         self.quick_score = 0
         self.fitness = None
+        self.param_count = None
         self.op_history = []
 
     def copy(self) -> "Individual":
@@ -201,10 +202,19 @@ class Encoder:
                     print("WARN: invalid block count")
                     return False
 
-            for unit_blocks in block_params_list:
+            for i, unit_blocks in enumerate(block_params_list):
                 for bp in unit_blocks:
                     if bp.out_channels not in config.CHANNEL_OPTIONS:
                         return False
+                    
+                    # 64 channels only allowed in the first unit (index 0)
+                    if i > 0 and bp.out_channels == 64:
+                        return False
+                    
+                    # 1024 channels only allowed in the last unit
+                    if i < unit_num - 1 and bp.out_channels == 1024:
+                        return False
+
                     if bp.groups not in config.GROUP_OPTIONS:
                         return False
                     if bp.pool_type not in config.POOL_TYPE_OPTIONS:

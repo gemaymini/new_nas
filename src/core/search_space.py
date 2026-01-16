@@ -38,8 +38,19 @@ class SearchSpace:
         """Randomly sample the number of blocks within a unit."""
         return random.randint(self.min_block_num, self.max_block_num)
 
-    def sample_channel(self) -> int:
-        return random.choice(self.channel_options)
+    def sample_channel(self, unit_idx: int = None, total_units: int = None) -> int:
+        options = list(self.channel_options)
+        if unit_idx is not None:
+             # Rule: 64 only allowed in first unit (unit_idx == 0)
+            if unit_idx > 0 and 64 in options:
+                options.remove(64)
+            
+            # Rule: 1024 only allowed in last unit (unit_idx == total_units - 1)
+            if total_units is not None:
+                if unit_idx < total_units - 1 and 1024 in options:
+                    options.remove(1024)
+        
+        return random.choice(options)
 
     def sample_groups(self) -> int:
         return random.choice(self.group_options)
@@ -75,18 +86,20 @@ class SearchSpace:
         return random.choice(self.expansion_options)
 
 
-    def sample_block_params(self, allow_concat: bool = True) -> BlockParams:
+    def sample_block_params(self, allow_concat: bool = True, unit_idx: int = None, total_units: int = None) -> BlockParams:
         """
         Sample a complete set of parameters for a single block.
 
         Args:
             allow_concat (bool): Whether to allow 'concat' skip connection.
+            unit_idx (int, optional): Index of the current unit.
+            total_units (int, optional): Total number of units.
 
         Returns:
             BlockParams: Sampled block parameters.
         """
         # allow_concat limits concat skips to the last block in a unit.
-        out_channels = self.sample_channel()
+        out_channels = self.sample_channel(unit_idx, total_units)
         groups = self.sample_groups()
         pool_type = self.sample_pool_type()
         pool_stride = self.sample_pool_stride()
@@ -154,7 +167,7 @@ class PopulationInitializer:
         downsampling_count = 0
         current_channels = config.INIT_CONV_OUT_CHANNELS
 
-        for block_num in block_nums:
+        for unit_idx, block_num in enumerate(block_nums):
             for block_idx in range(block_num):
                 # Only the last block in a unit may use concat skips.
                 is_last_block = block_idx == block_num - 1
@@ -162,7 +175,9 @@ class PopulationInitializer:
                 accepted = False
                 for _ in range(10):
                     block_params = self.search_space.sample_block_params(
-                        allow_concat=is_last_block
+                        allow_concat=is_last_block,
+                        unit_idx=unit_idx,
+                        total_units=unit_num
                     )
 
                     final_stride = block_params.pool_stride
@@ -192,8 +207,16 @@ class PopulationInitializer:
                 block_params.skip_type = 0
 
                 # Ensure fallback channels do not blow up concat limits.
+                # Filter available options based on constraints
+                available_options = list(self.search_space.channel_options)
+                if unit_idx > 0 and 64 in available_options:
+                    available_options.remove(64)
+                if unit_idx < unit_num - 1 and 1024 in available_options:
+                    if 1024 in available_options: # Check again to be safe/clear
+                        available_options.remove(1024)
+
                 max_allowed = max(
-                    c for c in self.search_space.channel_options
+                    c for c in available_options
                     if c * block_params.expansion <= config.MAX_CHANNELS
                 )
                 if block_params.out_channels * block_params.expansion > config.MAX_CHANNELS:

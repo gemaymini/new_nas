@@ -19,11 +19,10 @@ def get_activation(activation_type: int) -> nn.Module:
     Returns:
         nn.Module: Activation layer.
     """
-    if activation_type == 0:
-        return nn.ReLU(inplace=True)
     if activation_type == 1:
         return nn.SiLU(inplace=True)
-    return nn.ReLU(inplace=True)
+    else:
+        return nn.ReLU(inplace=True)
 
 
 class SEBlock(nn.Module):
@@ -245,6 +244,20 @@ class SearchedNetwork(nn.Module):
 
         self.encoding = encoding
         self.final_channels = current_channels
+
+        self._init_weights()
+
+    def _init_weights(self):
+        """Kaiming Init for better convergence."""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         x = self.conv_unit(x)

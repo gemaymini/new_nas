@@ -75,16 +75,14 @@ def generate_valid_child(
 
         if do_mutation:
             child = mutation_fn(child)
-            if hasattr(child, "op_history"):
-                ops.extend(child.op_history)
+            ops.extend(child.op_history)
 
         child.op_history = ops
 
         if not Encoder.validate_encoding(child.encoding):
             if repair_fn is not None:
                 child = repair_fn(child)
-                repair_ops = getattr(child, "op_history", [])
-                child.op_history = ops + repair_ops
+                child.op_history = ops + child.op_history
             else:
                 last_reason = "encoding invalid after generate/mutate"
                 continue
@@ -99,9 +97,5 @@ def generate_valid_child(
 
     logger.warning("Too many invalid children; sampling fresh individual")
     child = resample_fn()
-    child.op_history = child.op_history + [
-        {"op": "resample_for_param_bounds", "reason": last_reason}
-    ] if hasattr(child, "op_history") else [
-        {"op": "resample_for_param_bounds", "reason": last_reason}
-    ]
+    child.op_history.append({"op": "resample_for_param_bounds", "reason": last_reason})
     return child

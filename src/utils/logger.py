@@ -155,8 +155,30 @@ class TBLogger:
 
 class FailedLogger:
     def save_failed_individual(self, ind, reason, gen):
-        # Implementation skipped for brevity.
-        pass
+        if not config.SAVE_FAILED_INDIVIDUALS:
+            return
+
+        if not os.path.exists(config.FAILED_INDIVIDUALS_DIR):
+            os.makedirs(config.FAILED_INDIVIDUALS_DIR)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"failed_gen{gen}_{timestamp}_{ind.id}.json"
+        filepath = os.path.join(config.FAILED_INDIVIDUALS_DIR, filename)
+
+        data = {
+            "id": ind.id,
+            "gen": gen,
+            "reason": reason,
+            "encoding": ind.encoding,
+            "op_history": ind.op_history,
+            "timestamp": timestamp,
+        }
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"ERROR: failed to save failed individual: {e}")
 
 
 op_logger = OperationLogger(config.LOG_DIR)

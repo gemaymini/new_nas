@@ -21,6 +21,9 @@ class NetworkTrainer:
         if self.device == "cuda" and not torch.cuda.is_available():
             self.device = "cpu"
             logger.warning("CUDA not available, using CPU for training")
+        
+        # Initialize scaler for AMP
+        self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device == "cuda"))
 
     def _get_param_groups(self, model: nn.Module, weight_decay: float):
         """
@@ -117,13 +120,22 @@ class NetworkTrainer:
         total = 0
 
         for batch_idx, (inputs, targets) in enumerate(trainloader):
-            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
 
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            
+            with torch.cuda.amp.autocast(enabled=(self.device == "cuda")):
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+            
+            self.scaler.scale(loss).backward()
+            
+            # Unscale before clipping
+            self.scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            
+            self.scaler.step(optimizer)
+            self.scaler.update()
 
             running_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -170,7 +182,7 @@ class NetworkTrainer:
 
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(testloader):
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
 
