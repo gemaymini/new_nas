@@ -65,14 +65,14 @@ class SearchSpace:
         return random.choice(self.senet_options)
 
     def sample_activation(self) -> int:
-        # Activation types: 0=ReLU, 1=SiLU.
+        # Activation types: 0=ReLU.
         return random.choice(self.activation_options)
 
     def sample_dropout(self) -> float:
         return random.choice(self.dropout_options)
 
     def sample_skip_type(self, allow_concat: bool = True) -> int:
-        # Skip types: 0=add, 1=concat, 2=none.
+        # Skip types: 0=add, 1=concat.
         options = self.skip_type_options if allow_concat else [
             opt for opt in self.skip_type_options if opt != 1
         ]

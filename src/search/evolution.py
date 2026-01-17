@@ -117,13 +117,14 @@ class AgingEvolutionNAS:
         )
         return parents[0], parents[1]
 
-    def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
+    def _generate_offspring(self, parent1: Individual, parent2: Individual, progress: float = 0.0) -> Individual:
         """
         Generate one offspring using crossover and mutation.
 
         Args:
             parent1 (Individual): First parent.
             parent2 (Individual): Second parent.
+            progress (float): Search progress (0.0 to 1.0).
         
         Returns:
             Individual: The generated offspring.
@@ -138,11 +139,12 @@ class AgingEvolutionNAS:
             crossover_prob=config.PROB_CROSSOVER,
             mutation_prob=config.PROB_MUTATION,
             max_attempts=50,
+            progress=progress,
         )
 
-    def _repair_individual(self, ind: Individual) -> Individual:
+    def _repair_individual(self, ind: Individual, progress: float = 0.0) -> Individual:
         while True:
-            ind = mutation_operator.mutate(ind)
+            ind = mutation_operator.mutate(ind, progress=progress)
             if Encoder.validate_encoding(ind.encoding):
                 return ind
             print("WARN: repair failed, mutating again")
@@ -161,9 +163,15 @@ class AgingEvolutionNAS:
             bool: True if step completed successfully.
         """
         child = None
+        
+        steps_done = len(self.history) - len(self.population)
+        if steps_done < 0:
+            steps_done = 0
+        progress = min(1.0, steps_done / self.max_gen if self.max_gen > 0 else 0)
+
         while True:
             parent1, parent2 = self._select_parents()
-            child = self._generate_offspring(parent1, parent2)
+            child = self._generate_offspring(parent1, parent2, progress=progress)
 
             if self._is_duplicate(child.encoding):
                 self.duplicate_count += 1
@@ -273,6 +281,21 @@ class AgingEvolutionNAS:
             f"Selected Top {config.HISTORY_TOP_N1} candidates from {len(candidates)} "
             "unique history individuals based on NTK."
         )
+
+        # Log structure and encoding of Top N1 models
+        logger.info(f"Details of Top {len(top_n1)} Models selected by NTK:")
+        for i, ind in enumerate(top_n1):
+            logger.info(f"=== Model Rank {i+1} | ID: {ind.id} | NTK: {ind.fitness} ===")
+            logger.info(f"Encoding: {ind.encoding}")
+            try:
+                unit_num, block_nums, block_params_list = Encoder.decode(ind.encoding)
+                logger.info(f"Structure Summary: Units={unit_num}, Blocks per Unit={block_nums}")
+                for u_idx, unit_blocks in enumerate(block_params_list):
+                    for b_idx, bp in enumerate(unit_blocks):
+                        logger.info(f"  [U{u_idx+1}-B{b_idx+1}] {bp}")
+            except Exception as e:
+                logger.error(f"  Error decoding structure: {e}")
+        logger.info("============================================================")
 
         logger.info(
             f"Starting Short Training ({config.SHORT_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N1}..."

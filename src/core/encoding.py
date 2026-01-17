@@ -108,6 +108,7 @@ class Individual:
             Individual: A new instance with copied data.
         """
         new_ind = Individual(copy.deepcopy(self.encoding))
+        new_ind.id = self.id
         new_ind.fitness = self.fitness
         new_ind.quick_score = self.quick_score
         new_ind.op_history = copy.deepcopy(self.op_history)

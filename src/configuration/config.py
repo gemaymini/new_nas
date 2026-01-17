@@ -14,15 +14,15 @@ class Config:
     DATA_DIR = os.path.join(BASE_DIR, "data")
 
     # ==================== Evolution parameters ====================
-    POPULATION_SIZE = 5         # Aging Evolution queue size
-    MAX_GEN = 100                 # Total individuals evaluated in search
+    POPULATION_SIZE = 100         # Aging Evolution queue size
+    MAX_GEN = 10000                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
     # ==================== Screening/training pipeline ====================
-    HISTORY_TOP_N1 = 2            # Stage 1: Top N1 by NTK
+    HISTORY_TOP_N1 = 10            # Stage 1: Top N1 by NTK
     SHORT_TRAIN_EPOCHS = 30        # Stage 1 short training epochs
-    HISTORY_TOP_N2 = 1             # Stage 2: Top N2 by validation accuracy
+    HISTORY_TOP_N2 = 5             # Stage 2: Top N2 by validation accuracy
     FULL_TRAIN_EPOCHS = 300        # Final training epochs
 
     # ==================== Crossover/mutation ====================
@@ -41,15 +41,15 @@ class Config:
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
 
-    # Activation types: 0=ReLU, 1=SiLU
-    ACTIVATION_OPTIONS = [0, 1]
+    # Activation types: 0=ReLU
+    ACTIVATION_OPTIONS = [0]
     # Dropout options
     DROPOUT_OPTIONS = [0.0, 0.1]
     # Skip connection types: 0=add, 1=concat, 2=none
     SKIP_TYPE_ADD = 0
     SKIP_TYPE_CONCAT = 1
-    SKIP_TYPE_NONE = 2
-    SKIP_TYPE_OPTIONS = [SKIP_TYPE_ADD, SKIP_TYPE_CONCAT, SKIP_TYPE_NONE]
+    # SKIP_TYPE_NONE = 2 (Removed)
+    SKIP_TYPE_OPTIONS = [SKIP_TYPE_ADD, SKIP_TYPE_CONCAT]
     # Convolution kernel size options
     KERNEL_SIZE_OPTIONS = [3, 5]
     # Block expansion options (out_channels = mid_channels * expansion)
@@ -80,6 +80,13 @@ class Config:
     MIN_PARAM_COUNT = 2_000_000               # Minimum allowed model parameters
     MAX_PARAM_COUNT = 10_000_000      # Maximum allowed model parameters
     NTK_PARAM_THRESHOLD = MAX_PARAM_COUNT  # Alias for legacy usage
+    
+    # NTK Optimization Configs
+    NTK_SUBSAMPLE_SEED = 42
+    NTK_TARGET = "true_logit"      # "sum_logits" or "true_logit"
+    NTK_MAX_PARAMS = 200_000       # Max params to sample for NTK calculation
+    NTK_EIG_DTYPE = "float64"      # Force double precision for eigenvalues
+    NTK_COND_CLIP = 1e12            # Clip value for condition number
     # Optional per-dataset param bounds (override MIN/MAX when provided)
     DATASET_PARAM_BOUNDS = {
         "cifar10": {"min": 2_000_000, "max": 10_000_000},

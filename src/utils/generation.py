@@ -21,6 +21,7 @@ def generate_valid_child(
     crossover_prob: float = None,
     mutation_prob: float = None,
     max_attempts: int = 50,
+    progress: float = 0.0,
 ) -> Individual:
     """
     Generate an offspring that passes encoding validation and param bounds.
@@ -35,7 +36,8 @@ def generate_valid_child(
         crossover_prob (float, optional): Probability of crossover.
         mutation_prob (float, optional): Probability of mutation.
         max_attempts (int): Maximum attempts to generate a valid child before falling back to resample.
-
+        progress (float): Search progress (0.0 to 1.0) for adaptive mutation.
+    
     Returns:
         Individual: A valid offspring.
     """
@@ -74,14 +76,15 @@ def generate_valid_child(
             )
 
         if do_mutation:
-            child = mutation_fn(child)
+            child = mutation_fn(child, progress=progress)
             ops.extend(child.op_history)
 
         child.op_history = ops
 
         if not Encoder.validate_encoding(child.encoding):
             if repair_fn is not None:
-                child = repair_fn(child)
+                # pass progress to repair_fn as well if it uses mutation_fn internally
+                child = repair_fn(child, progress=progress)
                 child.op_history = ops + child.op_history
             else:
                 last_reason = "encoding invalid after generate/mutate"

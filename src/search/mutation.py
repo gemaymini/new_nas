@@ -251,12 +251,13 @@ class MutationOperator:
         }
         return Encoder.encode(unit_num, block_nums, block_params_list), detail
 
-    def mutate(self, individual: Individual) -> Individual:
+    def mutate(self, individual: Individual, progress: float = 0.0) -> Individual:
         """
         Apply a random set of mutations to an individual.
-
+        
         Args:
             individual (Individual): The individual to mutate.
+            progress (float): Search progress (0.0 to 1.0). Mutation intensity decreases as progress increases.
         
         Returns:
             Individual: A new, mutated individual.
@@ -265,37 +266,50 @@ class MutationOperator:
         applied_ops = []
         mutation_applied = False
 
-        if random.random() < self.prob_swap_blocks:
+        # Adaptive mutation: scale down probabilities based on progress
+        # Decay factor: 1.0 -> 0.2
+        decay = max(0.2, 1.0 - progress)
+        
+        # Dynamically adjust number of parameters to modify in modify_block
+        # 0.0-0.5: 3 params, 0.5-0.8: 2 params, 0.8-1.0: 1 param
+        num_params = 3
+        if progress > 0.5:
+            num_params = 2
+        if progress > 0.8:
+            num_params = 1
+
+        if random.random() < self.prob_swap_blocks * decay:
             new_encoding, detail = self.swap_blocks(new_encoding)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
-        if random.random() < self.prob_swap_units:
+        if random.random() < self.prob_swap_units * decay:
             new_encoding, detail = self.swap_units(new_encoding)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
-        if random.random() < self.prob_add_unit:
+        if random.random() < self.prob_add_unit * decay:
             new_encoding, detail = self.add_unit(new_encoding)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
-        if random.random() < self.prob_add_block:
+        if random.random() < self.prob_add_block * decay:
             new_encoding, detail = self.add_block(new_encoding)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
-        if random.random() < self.prob_delete_unit:
+        if random.random() < self.prob_delete_unit * decay:
             new_encoding, detail = self.delete_unit(new_encoding)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
-        if random.random() < self.prob_delete_block:
+        if random.random() < self.prob_delete_block * decay:
             new_encoding, detail = self.delete_block(new_encoding)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
-        if random.random() < self.prob_modify_block:
-            new_encoding, detail = self.modify_block(new_encoding)
+        # Modify block probability decays less, but intensity (num_params) reduces
+        if random.random() < self.prob_modify_block * max(0.5, decay):
+            new_encoding, detail = self.modify_block(new_encoding, num_params_to_modify=num_params)
             applied_ops.append(detail)
             mutation_applied = mutation_applied or detail.get("applied", False)
 
         if not mutation_applied:
-            new_encoding, detail = self.modify_block(new_encoding)
+            new_encoding, detail = self.modify_block(new_encoding, num_params_to_modify=1)
             applied_ops.append(detail)
 
         new_individual = Individual(new_encoding)
