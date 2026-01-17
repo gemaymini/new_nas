@@ -79,7 +79,7 @@ class Config:
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
-    BATCH_SIZE = 128             
+    BATCH_SIZE = 256
     LEARNING_RATE = 0.1             
     MOMENTUM = 0.9                  
     WEIGHT_DECAY = 5e-4             
