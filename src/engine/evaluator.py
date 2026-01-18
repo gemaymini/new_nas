@@ -281,13 +281,13 @@ class NTKEvaluator:
 
         return score
 
-    def compute_ntk_score(self, network: nn.Module, num_runs: int = 3) -> float:
+    def compute_ntk_score(self, network: nn.Module, num_runs: int = 12) -> float:
         """
-        Compute NTK score by averaging multiple runs.
+        Compute NTK score by averaging multiple runs (removing min/max).
         
         Args:
             network (nn.Module): The model.
-            num_runs (int): Number of independent NTK calculations to average.
+            num_runs (int): Number of independent NTK calculations to average. Defaults to 12.
 
         Returns:
             float: Averaged NTK condition number.
@@ -298,17 +298,23 @@ class NTKEvaluator:
             if self.recalbn > 0:
                 network = self.recal_bn(network, self.trainloader, self.recalbn, self.device)
 
-            total_cond = 0.0
+            cond_scores = []
             for _ in range(num_runs):
-                cond = self.compute_ntk_condition_number(
+                score = self.compute_ntk_condition_number(
                     network,
                     self.trainloader,
                     num_batch=self.num_batch,
                     train_mode=False,
                 )
-                total_cond += cond
+                cond_scores.append(score)
 
-            return round(total_cond / num_runs, 3)
+            if len(cond_scores) > 2:
+                cond_scores.remove(max(cond_scores))
+                cond_scores.remove(min(cond_scores))
+            
+            avg_score = sum(cond_scores) / len(cond_scores)
+
+            return round(avg_score, 3)
 
         except Exception as e:
             logger.error(f"NTK computation failed: {e}")

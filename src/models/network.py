@@ -35,7 +35,7 @@ class SEBlock(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(channels, channels // reduction, bias=False),
             nn.ReLU(inplace=False),
-            nn.Linear(channels // reduction, channels, bias=False),
+            nn.Linear(channels // reduction, channels, bias=True),
             nn.Sigmoid()
         )
 
@@ -259,6 +259,23 @@ class SearchedNetwork(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+
+        # SENet Initialization:
+        # Initialize SE blocks to be close to Identity (scale ~ 1.0)
+        # to avoid signal attenuation which ruins NTK condition number.
+        for m in self.modules():
+            if isinstance(m, SEBlock):
+                # m.fc is Sequential(Linear, ReLU, Linear, Sigmoid)
+                # Initialize first Linear
+                if isinstance(m.fc[0], nn.Linear):
+                    nn.init.kaiming_normal_(m.fc[0].weight, mode='fan_out', nonlinearity='relu')
+                
+                # Initialize second Linear (output layer)
+                if isinstance(m.fc[2], nn.Linear):
+                    nn.init.kaiming_normal_(m.fc[2].weight, mode='fan_out', nonlinearity='relu')
+                    # Set bias to +5.0 so Sigmoid(x) ~ 1.0
+                    if m.fc[2].bias is not None:
+                        nn.init.constant_(m.fc[2].bias, 5.0)
 
         # LowGamma Initialization:
         # Initialize the last BN in each residual block to 0.1.

@@ -15,7 +15,7 @@ class Config:
 
     # ==================== Evolution parameters ====================
     POPULATION_SIZE = 100         # Aging Evolution queue size
-    MAX_GEN = 10000                 # Total individuals evaluated in search
+    MAX_GEN = 3000                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
@@ -23,7 +23,7 @@ class Config:
     HISTORY_TOP_N1 = 10            # Stage 1: Top N1 by NTK
     SHORT_TRAIN_EPOCHS = 30        # Stage 1 short training epochs
     HISTORY_TOP_N2 = 5             # Stage 2: Top N2 by validation accuracy
-    FULL_TRAIN_EPOCHS = 300        # Final training epochs
+    FULL_TRAIN_EPOCHS = 500        # Final training epochs
 
     # ==================== Crossover/mutation ====================
     PROB_CROSSOVER = 0.5           # Crossover probability
@@ -36,7 +36,7 @@ class Config:
     MAX_BLOCK_NUM = 4              # Max blocks per unit
 
     CHANNEL_OPTIONS = [64, 128, 256, 512, 1024]
-    GROUP_OPTIONS = [8, 16, 32]
+    GROUP_OPTIONS = [8, 16, 32, 64]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
@@ -45,7 +45,7 @@ class Config:
     ACTIVATION_OPTIONS = [0]
     # Dropout options
     DROPOUT_OPTIONS = [0.0, 0.1]
-    # Skip connection types: 0=add, 1=concat, 2=none
+    # Skip connection types: 0=add, 1=concat
     SKIP_TYPE_ADD = 0
     SKIP_TYPE_CONCAT = 1
     # SKIP_TYPE_NONE = 2 (Removed)
@@ -100,7 +100,7 @@ class Config:
 
     # Optimizer selection and hyperparameters (CIFAR defaults, batch=128)
     OPTIMIZER_OPTIONS = ["adamw", "sgd"]
-    OPTIMIZER = "adamw"
+    OPTIMIZER = "sgd"
 
     # AdamW settings
     ADAMW_BETAS = (0.9, 0.999)

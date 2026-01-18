@@ -105,6 +105,7 @@ def main():
     logger.info(f"Dataset: {config.FINAL_DATASET}, Num Classes: {config.NTK_NUM_CLASSES}")
     logger.info(f"Input Size: {config.NTK_INPUT_SIZE}")
     logger.info(f"Optimizer: {config.OPTIMIZER}")
+    logger.info(f"Random Seed: {args.seed}")
     update_param_bounds_for_dataset(config.FINAL_DATASET)
 
     from engine.evaluator import fitness_evaluator
