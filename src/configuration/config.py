@@ -79,14 +79,7 @@ class Config:
     # Parameter count constraints
     MIN_PARAM_COUNT = 2_000_000               # Minimum allowed model parameters
     MAX_PARAM_COUNT = 10_000_000      # Maximum allowed model parameters
-    NTK_PARAM_THRESHOLD = MAX_PARAM_COUNT  # Alias for legacy usage
-    
-    # NTK Optimization Configs
-    NTK_SUBSAMPLE_SEED = 42
-    NTK_TARGET = "true_logit"      # "sum_logits" or "true_logit"
-    NTK_MAX_PARAMS = 200_000       # Max params to sample for NTK calculation
-    NTK_EIG_DTYPE = "float64"      # Force double precision for eigenvalues
-    NTK_COND_CLIP = 1e12            # Clip value for condition number
+
     # Optional per-dataset param bounds (override MIN/MAX when provided)
     DATASET_PARAM_BOUNDS = {
         "cifar10": {"min": 2_000_000, "max": 10_000_000},

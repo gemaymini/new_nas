@@ -78,7 +78,7 @@ class AgingEvolutionNAS:
             ind = population_initializer.create_valid_individual()
             if self._is_duplicate(ind.encoding):
                 self.duplicate_count += 1
-                print("WARN: duplicate architecture, resampling")
+                logger.warning("WARN: duplicate architecture, resampling")
                 continue
 
             self._register_encoding(ind.encoding)
@@ -147,7 +147,7 @@ class AgingEvolutionNAS:
             ind = mutation_operator.mutate(ind, progress=progress)
             if Encoder.validate_encoding(ind.encoding):
                 return ind
-            print("WARN: repair failed, mutating again")
+            logger.warning("WARN: repair failed, mutating again")
 
     def step(self) -> bool:
         """
@@ -175,7 +175,7 @@ class AgingEvolutionNAS:
 
             if self._is_duplicate(child.encoding):
                 self.duplicate_count += 1
-                print("WARN: duplicate architecture, resampling")
+                logger.warning("WARN: duplicate architecture, resampling")
                 continue
             break
 

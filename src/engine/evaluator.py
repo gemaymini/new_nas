@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Evaluation utilities for NTK scoring and full training.
 """
@@ -14,73 +13,9 @@ from configuration.config import config
 from core.encoding import Individual, Encoder
 from models.network import NetworkBuilder
 from utils.logger import logger
+from utils.common import clear_gpu_memory
 from data.dataset import DatasetLoader
 from engine.trainer import NetworkTrainer
-
-
-
-def clear_gpu_memory():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        gc.collect()
-
-
-
-def _allocate_budget(lengths, budget, min_per=0):
-    """
-    lengths: list[int] each tensor length
-    returns alloc list[int] sum == budget (or == sum(lengths) if budget larger)
-    """
-    total = sum(lengths)
-    if budget >= total:
-        return lengths[:]  # take all
-
-    # min allocation
-    alloc = [min(l, min_per) for l in lengths]
-    s = sum(alloc)
-    if s > budget:
-        # shrink mins proportionally
-        # start from zeros and distribute by lengths
-        alloc = [0] * len(lengths)
-        # proportional base
-        frac = [l / total for l in lengths]
-        alloc = [min(lengths[i], int(frac[i] * budget)) for i in range(len(lengths))]
-        diff = budget - sum(alloc)
-        # distribute remaining to largest remaining capacity
-        cap = [lengths[i] - alloc[i] for i in range(len(lengths))]
-        order = sorted(range(len(lengths)), key=lambda i: cap[i], reverse=True)
-        for i in order:
-            if diff == 0: break
-            if cap[i] > 0:
-                alloc[i] += 1
-                cap[i] -= 1
-                diff -= 1
-        return alloc
-
-    remaining = budget - s
-    # distribute remaining proportionally to (length - alloc)
-    rem_caps = [lengths[i] - alloc[i] for i in range(len(lengths))]
-    rem_total = sum(rem_caps)
-    if rem_total <= 0:
-        return alloc
-
-    # proportional extras
-    extra = [int(rem_caps[i] / rem_total * remaining) for i in range(len(lengths))]
-    # cap extras
-    extra = [min(extra[i], rem_caps[i]) for i in range(len(lengths))]
-    diff = remaining - sum(extra)
-
-    # distribute leftover to largest remaining capacity
-    cap2 = [rem_caps[i] - extra[i] for i in range(len(lengths))]
-    order = sorted(range(len(lengths)), key=lambda i: cap2[i], reverse=True)
-    for i in order:
-        if diff == 0: break
-        if cap2[i] > 0:
-            extra[i] += 1
-            cap2[i] -= 1
-            diff -= 1
-
-    return [alloc[i] + extra[i] for i in range(len(lengths))]
 
 
 class NTKEvaluator:
@@ -139,7 +74,7 @@ class NTKEvaluator:
         for m in network.modules():
             if isinstance(m, torch.nn.BatchNorm2d):
                 m.running_mean.data.fill_(0)
-                m.running_var.data.fill_(1)  # Initialize with 1 to avoid initial instability
+                m.running_var.data.fill_(0)
                 m.num_batches_tracked.data.zero_()
                 m.momentum = None
 
@@ -160,7 +95,7 @@ class NTKEvaluator:
         train_mode: bool = False,
     ) -> float:
         """
-        Compute NTK condition number using vectorized gradients (torch.func).
+        Compute NTK condition number using loop-based gradient accumulation (Legacy MD Logic).
 
         Args:
             network (nn.Module): The neural network.
@@ -171,115 +106,42 @@ class NTKEvaluator:
         Returns:
             float: The NTK condition number (log10 scale, clipped).
         """
-        from torch.func import functional_call, vmap, grad
+        device = torch.cuda.current_device()
+        networks = [network]
         
-        device = torch.device(self.device)
-        network.train() if train_mode else network.eval()
-
-        # Config
-        ntk_target = getattr(config, "NTK_TARGET", "sum_logits")
-        ntk_max_params = int(getattr(config, "NTK_MAX_PARAMS", 200_000))
-        ntk_cond_clip = float(getattr(config, "NTK_COND_CLIP", 1e8))
-        ntk_eig_dtype = getattr(config, "NTK_EIG_DTYPE", "float64")
-        max_score = float(np.log10(ntk_cond_clip + 1.0))
-
-        # Prepare parameters
-        params = {k: v for k, v in network.named_parameters() if v.requires_grad}
-        param_names = list(params.keys())
-
-        grads = []
-        slices = None
-
-        for i, (inputs, targets) in enumerate(xloader):
-            if num_batch > 0 and i >= num_batch:
-                break
-            inputs = inputs.to(device=device, non_blocking=True)
-            if ntk_target == "true_logit":
-                targets = targets.to(device=device, non_blocking=True)
-
-            # Define loss function for gradient computation
-            def compute_loss(params, x, y=None):
-                outputs = functional_call(network, params, (x.unsqueeze(0),)).squeeze(0)
-                if ntk_target == "true_logit" and y is not None:
-                    return outputs.gather(0, y.view(1)).sum()
-                return outputs.sum()
-
-            # Compute per-sample gradients via vmap
-            if ntk_target == "true_logit":
-                batch_grads_dict = vmap(grad(compute_loss), in_dims=(None, 0, 0))(params, inputs, targets)
+        for net in networks:
+            if train_mode:
+                net.train()
             else:
-                batch_grads_dict = vmap(grad(compute_loss), in_dims=(None, 0, None))(params, inputs, None)
-            
-            # Build slices on first batch (guaranteed alignment)
-            if slices is None:
-                slices = []
-                offset = 0
-                for k in param_names:
-                    length = batch_grads_dict[k][0].numel()
-                    slices.append((k, offset, offset + length))
-                    offset += length
-
-            # Flatten and concatenate gradients
-            batch_grads = torch.cat([batch_grads_dict[k].flatten(start_dim=1) for k in param_names], dim=1)
-            grads.append(batch_grads)
-
-        if len(grads) == 0:
-            return max_score
-
-        grads_tensor = torch.cat(grads, dim=0)  # (TotalSamples, TotalParams)
-        
-        # Layer-wise subsampling
-        P = grads_tensor.shape[1]
-        if P > ntk_max_params:
-            min_per_tensor = int(getattr(config, "NTK_MIN_PER_TENSOR", 16))
-            seed = int(getattr(config, "NTK_SUBSAMPLE_SEED", 42))
-
-            lengths = [end - start for _, start, end in slices]
-            alloc = _allocate_budget(lengths, ntk_max_params, min_per=min_per_tensor)
-
-            g = torch.Generator(device=grads_tensor.device)
-            
-            g.manual_seed(seed)
-
-            idx_list = []
-            for (_, start, end), k in zip(slices, alloc):
-                length = end - start
-                if k <= 0:
-                    continue
-                if k >= length:
-                    local = torch.arange(length, device=grads_tensor.device, dtype=torch.long)
-                else:
-                    local = torch.randperm(length, generator=g, device=grads_tensor.device)[:k]
-                idx_list.append(local + start)
-
-            if idx_list:
-                grads_tensor = grads_tensor[:, torch.cat(idx_list, dim=0)]
-
-        # Compute NTK (Gram Matrix)
-        ntk = grads_tensor @ grads_tensor.t()
-
-        # Eigenvalues
-        if ntk_eig_dtype == "float64":
-            eigenvalues = torch.linalg.eigvalsh(ntk.double())
-        else:
-            eigenvalues = torch.linalg.eigvalsh(ntk)
-        eigenvalues = torch.clamp(eigenvalues, min=0.0)
-        
-        max_eigen = eigenvalues.max().item()
-        min_eigen = eigenvalues.min().item()
-
-        cond = ntk_cond_clip if min_eigen < 1e-12 else max_eigen / min_eigen
-        cond = min(cond, ntk_cond_clip)
-        score = float(np.log10(cond + 1.0))
-        
-        logger.info(f"NTK Linear: {cond:.4e}, LogScore: {score:.4f}")
-
-        del grads, grads_tensor, ntk, eigenvalues
-        
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        return score
+                net.eval()
+        ######
+        grads = [[] for _ in range(len(networks))]
+        for i, (inputs, targets) in enumerate(xloader):
+            if num_batch > 0 and i >= num_batch: break
+            inputs = inputs.cuda(device=device, non_blocking=True)
+            for net_idx, net in enumerate(networks):
+                net.zero_grad()
+                inputs_ = inputs.clone().cuda(device=device, non_blocking=True)
+                logit = net(inputs_)
+                if isinstance(logit, tuple):
+                    logit = logit[1]  # 201 networks: return features and logits
+                for _idx in range(len(inputs_)):
+                    logit[_idx:_idx+1].backward(torch.ones_like(logit[_idx:_idx+1]), retain_graph=True)
+                    grad = []
+                    for name, W in net.named_parameters():
+                        if 'weight' in name and W.grad is not None:
+                            grad.append(W.grad.view(-1).detach())
+                    grads[net_idx].append(torch.cat(grad, -1))
+                    net.zero_grad()
+                    torch.cuda.empty_cache()
+        ######
+        grads = [torch.stack(_grads, 0) for _grads in grads]
+        ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
+        conds = []
+        for ntk in ntks:
+            eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
+            conds.append(np.nan_to_num((eigenvalues[-1] / eigenvalues[0]).item(), copy=True, nan=100000.0))
+        return conds[0]
 
     def compute_ntk_score(self, network: nn.Module, num_runs: int = 12) -> float:
         """
@@ -320,7 +182,7 @@ class NTKEvaluator:
             logger.error(f"NTK computation failed: {e}")
             clear_gpu_memory()
             # Return max clipped score on failure
-            ntk_cond_clip = float(getattr(config, "NTK_COND_CLIP", 1e8))
+            ntk_cond_clip = 1e8
             return float(np.log10(ntk_cond_clip + 1.0))
 
     def evaluate_individual(self, individual: Individual) -> float:
@@ -342,7 +204,7 @@ class NTKEvaluator:
         except Exception as e:
             logger.error(f"Failed to evaluate individual {individual.id}: {e}")
             # Return max clipped score on failure
-            ntk_cond_clip = float(getattr(config, "NTK_COND_CLIP", 1e8))
+            ntk_cond_clip = 1e8
             max_score = float(np.log10(ntk_cond_clip + 1.0))
             individual.fitness = max_score
             clear_gpu_memory()

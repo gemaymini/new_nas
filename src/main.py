@@ -137,5 +137,5 @@ def main():
 
 
 if __name__ == "__main__":
-    print(f"INFO: project_root={PROJECT_ROOT}")
+    logger.info(f"INFO: project_root={PROJECT_ROOT}")
     main()

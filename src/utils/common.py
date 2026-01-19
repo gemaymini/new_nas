@@ -3,6 +3,10 @@
 Shared utility functions.
 """
 
+import gc
+import torch
+
+
 def format_time(seconds: float) -> str:
     """
     Format seconds into a readable time string.
@@ -45,4 +49,11 @@ CIFAR100_CLASSES = (
     'tulip', 'turtle', 'wardrobe', 'whale', 'willow_tree', 'wolf', 'woman', 
     'worm'
 )
+
+
+def clear_gpu_memory():
+    """Clear GPU memory."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 

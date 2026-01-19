@@ -76,7 +76,7 @@ def main():
     }
 
     print("\nStarting NTK Condition Number Tests...\n")
-    print(f"{'Model Name':<30} | {'Params':<15} | {'NTK Score (Log10 Cond)':<25}")
+    print(f"{'Model Name':<30} | {'Params':<15} | {'NTK Score ':<25}")
     print("-" * 80)
 
     for name, model in models_to_test.items():

@@ -6,6 +6,7 @@ import random
 from typing import List, Optional
 from configuration.config import config
 from core.encoding import Encoder, Individual, BlockParams
+from utils.logger import logger
 from utils.constraints import evaluate_encoding_params
 
 
@@ -30,15 +31,8 @@ class SearchSpace:
         self.kernel_size_options = config.KERNEL_SIZE_OPTIONS
         self.expansion_options = config.EXPANSION_OPTIONS
 
-    def sample_unit_num(self) -> int:
-        """Randomly sample the number of units."""
-        return random.randint(self.min_unit_num, self.max_unit_num)
-
-    def sample_block_num(self) -> int:
-        """Randomly sample the number of blocks within a unit."""
-        return random.randint(self.min_block_num, self.max_block_num)
-
-    def sample_channel(self, unit_idx: int = None, total_units: int = None) -> int:
+    def get_valid_channels(self, unit_idx: int = None, total_units: int = None) -> List[int]:
+        """Get list of valid channel options enforcing constraints."""
         options = list(self.channel_options)
         if unit_idx is not None:
              # Rule: 64 only allowed in first unit (unit_idx == 0)
@@ -49,7 +43,18 @@ class SearchSpace:
             if total_units is not None:
                 if unit_idx < total_units - 1 and 1024 in options:
                     options.remove(1024)
-        
+        return options
+
+    def sample_unit_num(self) -> int:
+        """Randomly sample the number of units."""
+        return random.randint(self.min_unit_num, self.max_unit_num)
+
+    def sample_block_num(self) -> int:
+        """Randomly sample the number of blocks within a unit."""
+        return random.randint(self.min_block_num, self.max_block_num)
+
+    def sample_channel(self, unit_idx: int = None, total_units: int = None) -> int:
+        options = self.get_valid_channels(unit_idx, total_units)
         return random.choice(options)
 
     def sample_groups(self) -> int:
@@ -135,12 +140,12 @@ class PopulationInitializer:
         while True:
             encoding = self._create_constrained_encoding()
             if not Encoder.validate_encoding(encoding):
-                print(f"WARN: invalid individual; resampling encoding={encoding}")
+                logger.warning(f"Invalid individual; resampling encoding={encoding}")
                 continue
 
             ok, reason, param_count = evaluate_encoding_params(encoding)
             if not ok:
-                print(f"WARN: param bounds failed ({reason}); resampling")
+                logger.warning(f"Param bounds failed ({reason}); resampling")
                 continue
 
             ind = Individual(encoding)
@@ -208,12 +213,7 @@ class PopulationInitializer:
 
                 # Ensure fallback channels do not blow up concat limits.
                 # Filter available options based on constraints
-                available_options = list(self.search_space.channel_options)
-                if unit_idx > 0 and 64 in available_options:
-                    available_options.remove(64)
-                if unit_idx < unit_num - 1 and 1024 in available_options:
-                    if 1024 in available_options: # Check again to be safe/clear
-                        available_options.remove(1024)
+                available_options = self.search_space.get_valid_channels(unit_idx, unit_num)
 
                 max_allowed = max(
                     c for c in available_options
