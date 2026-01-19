@@ -24,21 +24,6 @@ class MutationOperator:
         self.prob_delete_block = config.PROB_DELETE_BLOCK
         self.prob_modify_block = config.PROB_MODIFY_BLOCK
 
-    def _repair_channels(self, block_params_list: List[List]) -> None:
-        """
-        Scan and repair out_channels to strictly follow 64/1024 positional rules.
-        """
-        unit_num = len(block_params_list)
-        for unit_idx, unit_blocks in enumerate(block_params_list):
-            for bp in unit_blocks:
-                # Rule: 64 only in Unit 0
-                if unit_idx > 0 and bp.out_channels == 64:
-                    bp.out_channels = search_space.sample_channel(unit_idx, unit_num)
-                
-                # Rule: 1024 only in Last Unit
-                if unit_idx < unit_num - 1 and bp.out_channels == 1024:
-                    bp.out_channels = search_space.sample_channel(unit_idx, unit_num)
-
     def _enforce_concat_last(self, block_params_list: List[List]) -> None:
         """
         Ensure 'concat' skip type is ONLY present in the last block of a unit.
@@ -47,9 +32,6 @@ class MutationOperator:
         Args:
             block_params_list: Nested list of block parameters.
         """
-        # First repair channels since unit counts/positions might have changed
-        self._repair_channels(block_params_list)
-
         # Ensure concat skips appear only in the last block of each unit.
         for unit_blocks in block_params_list:
             last_idx = len(unit_blocks) - 1
@@ -108,9 +90,7 @@ class MutationOperator:
         insert_pos = random.randint(0, unit_num)
         new_blocks = [
             search_space.sample_block_params(
-                allow_concat=idx == new_block_num - 1,
-                unit_idx=insert_pos,
-                total_units=unit_num + 1
+                allow_concat=idx == new_block_num - 1
             )
             for idx in range(new_block_num)
         ]
@@ -135,9 +115,7 @@ class MutationOperator:
         insert_pos = random.randint(0, block_nums[unit_idx])
         allow_concat = insert_pos == block_nums[unit_idx]
         new_block = search_space.sample_block_params(
-            allow_concat=allow_concat,
-            unit_idx=unit_idx,
-            total_units=unit_num
+            allow_concat=allow_concat
         )
         block_params_list[unit_idx].insert(insert_pos, new_block)
         block_nums[unit_idx] += 1
@@ -228,7 +206,7 @@ class MutationOperator:
                 changes.append({"param": param, "old": old_val, "new": new_val})
             elif param == "out_channels":
                 old_val = old_block.out_channels
-                new_val = search_space.sample_channel(unit_idx=unit_idx, total_units=unit_num)
+                new_val = search_space.sample_channel()
                 old_block.out_channels = new_val
                 changes.append({"param": param, "old": old_val, "new": new_val})
             else:
@@ -397,9 +375,7 @@ class CrossoverOperator:
                 nb = search_space.sample_block_num()
                 return nb, [
                     search_space.sample_block_params(
-                        allow_concat=j == nb - 1,
-                        unit_idx=idx,
-                        total_units=new_unit_num
+                        allow_concat=j == nb - 1
                     )
                     for j in range(nb)
                 ]

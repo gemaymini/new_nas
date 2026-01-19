@@ -35,8 +35,8 @@ class Config:
     MIN_BLOCK_NUM = 2              # Min blocks per unit
     MAX_BLOCK_NUM = 4              # Max blocks per unit
 
-    CHANNEL_OPTIONS = [64, 128, 256, 512, 1024]
-    GROUP_OPTIONS = [8, 16, 32, 64]
+    CHANNEL_OPTIONS = [32, 64, 128, 256, 512]
+    GROUP_OPTIONS = [8, 16, 32]
     POOL_TYPE_OPTIONS = [0, 1]
     POOL_STRIDE_OPTIONS = [1, 2]
     SENET_OPTIONS = [0, 1]
@@ -56,7 +56,7 @@ class Config:
     EXPANSION_OPTIONS = [1, 2]
 
     # Initial stem convolution
-    INIT_CONV_OUT_CHANNELS = 64
+    INIT_CONV_OUT_CHANNELS = 32
     INIT_CONV_KERNEL_SIZE = 3
     INIT_CONV_STRIDE = 1
     INIT_CONV_PADDING = 1
