@@ -24,7 +24,7 @@ class SearchSpace:
         self.group_options = config.GROUP_OPTIONS
         self.pool_type_options = config.POOL_TYPE_OPTIONS
         self.pool_stride_options = config.POOL_STRIDE_OPTIONS
-        self.senet_options = config.SENET_OPTIONS
+        self.cbam_options = config.CBAM_OPTIONS
         self.activation_options = config.ACTIVATION_OPTIONS
         self.dropout_options = config.DROPOUT_OPTIONS
         self.skip_type_options = config.SKIP_TYPE_OPTIONS
@@ -51,8 +51,8 @@ class SearchSpace:
     def sample_pool_stride(self) -> int:
         return random.choice(self.pool_stride_options)
 
-    def sample_senet(self) -> int:
-        return random.choice(self.senet_options)
+    def sample_cbam(self) -> int:
+        return random.choice(self.cbam_options)
 
     def sample_activation(self) -> int:
         # Activation types: 0=ReLU.
@@ -91,13 +91,13 @@ class SearchSpace:
         groups = self.sample_groups()
         pool_type = self.sample_pool_type()
         pool_stride = self.sample_pool_stride()
-        has_senet = self.sample_senet()
+        has_cbam = self.sample_cbam()
         activation_type = self.sample_activation()
         dropout_rate = self.sample_dropout()
         skip_type = self.sample_skip_type(allow_concat=allow_concat)
         kernel_size = self.sample_kernel_size()
         expansion = self.sample_expansion()
-        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
+        return BlockParams(out_channels, groups, pool_type, pool_stride, has_cbam,
                            activation_type, dropout_rate, skip_type, kernel_size, expansion)
 
 

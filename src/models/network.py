@@ -14,39 +14,68 @@ def get_activation(activation_type: int) -> nn.Module:
     Return the activation module for the given type.
 
     Args:
-        activation_type (int): 0 for ReLU, 1 for SiLU.
+        activation_type (int): 0 for ReLU, 1 for SiLU, 2 for GELU, 3 for HardSwish.
 
     Returns:
         nn.Module: Activation layer.
     """
     if activation_type == 1:
         return nn.SiLU(inplace=False)
+    elif activation_type == 2:
+        return nn.GELU()
+    elif activation_type == 3:
+        return nn.Hardswish(inplace=False)
     else:
         return nn.ReLU(inplace=False)
 
 
-class SEBlock(nn.Module):
-    """
-    Squeeze-and-Excitation block.
-    """
-    def __init__(self, channels: int, reduction: int = 16):
-        super(SEBlock, self).__init__()
+class ChannelAttention(nn.Module):
+    def __init__(self, in_planes, reduction=16):
+        super(ChannelAttention, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channels, channels // reduction, bias=False),
-            nn.ReLU(inplace=False),
-            nn.Linear(channels // reduction, channels, bias=True),
-            nn.Sigmoid()
-        )
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.fc1 = nn.Conv2d(in_planes, in_planes // reduction, 1, bias=False)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Conv2d(in_planes // reduction, in_planes, 1, bias=True)
+
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        """
-        Forward pass of SE block.
-        """
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
+        avg_out = self.fc2(self.relu1(self.fc1(self.avg_pool(x))))
+        max_out = self.fc2(self.relu1(self.fc1(self.max_pool(x))))
+        out = avg_out + max_out
+        return self.sigmoid(out)
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+
+        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        padding = 3 if kernel_size == 7 else 1
+
+        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=True)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.conv1(x)
+        return self.sigmoid(x)
+
+
+class CBAM(nn.Module):
+    def __init__(self, planes, reduction=16):
+        super(CBAM, self).__init__()
+        self.ca = ChannelAttention(planes, reduction)
+        self.sa = SpatialAttention(kernel_size=config.CBAM_KERNEL_SIZE)
+
+    def forward(self, x):
+        out = x * self.ca(x)
+        out = out * self.sa(out)
+        return out
 
 
 class ConvUnit(nn.Module):
@@ -87,7 +116,7 @@ class RegBlock(nn.Module):
         # Output channels scale with per-block expansion.
         self.out_channels = self.mid_channels * block_params.expansion
         self.groups = block_params.groups
-        self.has_senet = block_params.has_senet == 1
+        self.has_cbam = block_params.has_cbam == 1
         self.activation_type = block_params.activation_type
         self.dropout_rate = block_params.dropout_rate
         self.skip_type = block_params.skip_type  # 0=add, 1=concat, 2=none
@@ -111,8 +140,14 @@ class RegBlock(nn.Module):
 
         if block_params.pool_type == 0:
             self.pool = nn.MaxPool2d(kernel_size=3, stride=block_params.pool_stride, padding=1)
-        else:
+        elif block_params.pool_type == 1:
             self.pool = nn.AvgPool2d(kernel_size=3, stride=block_params.pool_stride, padding=1)
+        else:
+            # pool_type == 2 (None)
+            if block_params.pool_stride == 2:
+                self.pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+            else:
+                self.pool = nn.Identity()
 
         self.conv3 = nn.Conv2d(self.mid_channels, self.out_channels,
                                kernel_size=1, stride=1, padding=0, bias=False)
@@ -138,12 +173,12 @@ class RegBlock(nn.Module):
         else:  # none
             self.shortcut = None
 
-        if self.has_senet:
+        if self.has_cbam:
             se_channels = self.final_out_channels
-            reduction = config.SENET_REDUCTION
-            self.se = SEBlock(se_channels, reduction)
+            reduction = config.CBAM_REDUCTION
+            self.cbam = CBAM(se_channels, reduction)
         else:
-            self.se = None
+            self.cbam = None
 
         if self.dropout_rate > 0:
             self.dropout = nn.Dropout2d(p=self.dropout_rate)
@@ -166,18 +201,18 @@ class RegBlock(nn.Module):
         out = self.bn2(out)
         out = self.activation(out)
 
-        out = self.pool(out)
-
         out = self.conv3(out)
         out = self.bn3(out)
+
+        out = self.pool(out)
 
         if self.skip_type == 0:  # add
             out = out + identity
         elif self.skip_type == 1:  # concat
             out = torch.cat([out, identity], dim=1)
 
-        if self.se is not None:
-            out = self.se(out)
+        if self.cbam is not None:
+            out = self.cbam(out)
 
         if self.dropout is not None:
             out = self.dropout(out)
@@ -260,22 +295,19 @@ class SearchedNetwork(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
-        # SENet Initialization:
-        # Initialize SE blocks to be close to Identity (scale ~ 1.0)
-        # to avoid signal attenuation which ruins NTK condition number.
+        # CBAM Initialization:
+        # Initialize CBAM blocks to be close to Identity (scale ~ 1.0).
         for m in self.modules():
-            if isinstance(m, SEBlock):
-                # m.fc is Sequential(Linear, ReLU, Linear, Sigmoid)
-                # Initialize first Linear
-                if isinstance(m.fc[0], nn.Linear):
-                    nn.init.kaiming_normal_(m.fc[0].weight, mode='fan_out', nonlinearity='relu')
-                
-                # Initialize second Linear (output layer)
-                if isinstance(m.fc[2], nn.Linear):
-                    nn.init.kaiming_normal_(m.fc[2].weight, mode='fan_out', nonlinearity='relu')
-                    # Set bias to +5.0 so Sigmoid(x) ~ 1.0
-                    if m.fc[2].bias is not None:
-                        nn.init.constant_(m.fc[2].bias, 5.0)
+            if isinstance(m, ChannelAttention):
+                # fc2 is the output layer with bias=True
+                nn.init.kaiming_normal_(m.fc2.weight, mode='fan_out', nonlinearity='relu')
+                if m.fc2.bias is not None:
+                    nn.init.constant_(m.fc2.bias, 5.0)
+            elif isinstance(m, SpatialAttention):
+                # conv1 is the output layer with bias=True
+                nn.init.kaiming_normal_(m.conv1.weight, mode='fan_out', nonlinearity='relu')
+                if m.conv1.bias is not None:
+                    nn.init.constant_(m.conv1.bias, 5.0)
 
         # LowGamma Initialization:
         # Initialize the last BN in each residual block to 0.1.

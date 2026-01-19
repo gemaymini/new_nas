@@ -14,8 +14,8 @@ class Config:
     DATA_DIR = os.path.join(BASE_DIR, "data")
 
     # ==================== Evolution parameters ====================
-    POPULATION_SIZE = 100         # Aging Evolution queue size
-    MAX_GEN = 3000                 # Total individuals evaluated in search
+    POPULATION_SIZE = 5         # Aging Evolution queue size
+    MAX_GEN = 5                 # Total individuals evaluated in search
     TOURNAMENT_SIZE = 3            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
@@ -37,18 +37,18 @@ class Config:
 
     CHANNEL_OPTIONS = [32, 64, 128, 256, 512]
     GROUP_OPTIONS = [8, 16, 32]
-    POOL_TYPE_OPTIONS = [0, 1]
+    POOL_TYPE_OPTIONS = [0, 1, 2] # 0=Max, 1=Avg, 2=None
     POOL_STRIDE_OPTIONS = [1, 2]
-    SENET_OPTIONS = [0, 1]
+    CBAM_OPTIONS = [0, 1]
+    CBAM_KERNEL_SIZE = 7
 
-    # Activation types: 0=ReLU
-    ACTIVATION_OPTIONS = [0]
+    # Activation types: 0=ReLU, 1=SiLU, 2=GELU, 3=HardSwish
+    ACTIVATION_OPTIONS = [0, 1, 2, 3]
     # Dropout options
     DROPOUT_OPTIONS = [0.0, 0.1]
     # Skip connection types: 0=add, 1=concat
     SKIP_TYPE_ADD = 0
     SKIP_TYPE_CONCAT = 1
-    # SKIP_TYPE_NONE = 2 (Removed)
     SKIP_TYPE_OPTIONS = [SKIP_TYPE_ADD, SKIP_TYPE_CONCAT]
     # Convolution kernel size options
     KERNEL_SIZE_OPTIONS = [3, 5]
@@ -138,8 +138,8 @@ class Config:
     # ==================== Final evaluation ====================
     FINAL_DATASET = "cifar10"
 
-    # ==================== SENet ====================
-    SENET_REDUCTION = 16
+    # ==================== CBAM ====================
+    CBAM_REDUCTION = 16
 
     # ==================== Logging ====================
     LOG_DIR = os.path.join(BASE_DIR, "logs")

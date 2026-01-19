@@ -15,7 +15,7 @@
         *   `groups` (int): 卷积分组数。
         *   `pool_type` (int): 池化类型 (0=MaxPool, 1=AvgPool)。
         *   `pool_stride` (int): 池化步长 (1 或 2)。
-        *   `has_senet` (int): 是否使用 SE 模块 (1=是, 0=否)。
+        *   `has_cbam` (int): 是否使用 CBAM 模块 (1=是, 0=否)。
         *   `activation_type` (int, optional): 激活函数类型 (0=ReLU, 1=SiLU)。默认 0。
         *   `dropout_rate` (float, optional): Dropout 率。默认 0.0。
         *   `skip_type` (int, optional): 跳跃连接类型 (0=add, 1=concat, 2=none)。默认 0。

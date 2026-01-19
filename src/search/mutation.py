@@ -186,7 +186,7 @@ class MutationOperator:
             "groups": (lambda b: b.groups, search_space.sample_groups),
             "pool_type": (lambda b: b.pool_type, search_space.sample_pool_type),
             "pool_stride": (lambda b: b.pool_stride, search_space.sample_pool_stride),
-            "has_senet": (lambda b: b.has_senet, search_space.sample_senet),
+            "has_cbam": (lambda b: b.has_cbam, search_space.sample_cbam),
             "activation_type": (lambda b: b.activation_type, search_space.sample_activation),
             "dropout_rate": (lambda b: b.dropout_rate, search_space.sample_dropout),
             "kernel_size": (lambda b: b.kernel_size, search_space.sample_kernel_size),

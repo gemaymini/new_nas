@@ -44,7 +44,7 @@ Key optional flags (see `parse_args` in `src/main.py`):
 
 ## Configuration Highlights (`configuration.config.Config`)
 - Search: population size, max generations, tournament sizes, crossover/mutation probabilities.
-- Search space: unit/block count ranges, channels/groups/pooling/SENet/activations/skip types/kernel sizes/expansion.
+- Search space: unit/block count ranges, channels/groups/pooling/CBAM/activations/skip types/kernel sizes/expansion.
 - Constraints: min/max parameter counts, dataset-specific bounds.
 - Training: batch sizes, optimizer defaults, warmup + cosine scheduler, early stopping.
 - Logging/IO: log/checkpoint/tensorboard directories, saving failed individuals.

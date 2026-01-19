@@ -15,7 +15,7 @@ class BlockParams:
     """Container for block-level hyperparameters."""
 
     def __init__(self, out_channels: int, groups: int, pool_type: int,
-                 pool_stride: int, has_senet: int, activation_type: int = 0,
+                 pool_stride: int, has_cbam: int, activation_type: int = 0,
                  dropout_rate: float = 0.0, skip_type: int = 0, kernel_size: int = 3,
                  expansion: int = 2):
         """
@@ -26,7 +26,7 @@ class BlockParams:
             groups (int): Number of groups for convolution.
             pool_type (int): 0 for MaxPool, 1 for AvgPool.
             pool_stride (int): Stride for pooling (1 or 2).
-            has_senet (int): 1 if SE block is used, 0 otherwise.
+            has_cbam (int): 1 if CBAM block is used, 0 otherwise.
             activation_type (int): 0 for ReLU, 1 for SiLU.
             dropout_rate (float): Dropout probability.
             skip_type (int): 0 for add, 1 for concat, 2 for none.
@@ -37,7 +37,7 @@ class BlockParams:
         self.groups = groups
         self.pool_type = pool_type
         self.pool_stride = pool_stride
-        self.has_senet = has_senet
+        self.has_cbam = has_cbam
         self.activation_type = activation_type  # 0=ReLU, 1=SiLU
         self.dropout_rate = dropout_rate        # Dropout rate
         self.skip_type = skip_type              # 0=add, 1=concat, 2=none
@@ -53,7 +53,7 @@ class BlockParams:
         """
         dropout_encoded = int(self.dropout_rate * 100)
         return [self.out_channels, self.groups, self.pool_type,
-                self.pool_stride, self.has_senet, self.activation_type,
+                self.pool_stride, self.has_cbam, self.activation_type,
                 dropout_encoded, self.skip_type, self.kernel_size, self.expansion]
 
     @classmethod
@@ -74,11 +74,14 @@ class BlockParams:
                    params[5], dropout_rate, params[7], params[8], params[9])
 
     def __repr__(self):
-        activation_names = {0: "ReLU", 1: "SiLU"}
+        activation_names = {0: "ReLU", 1: "SiLU", 2: "GELU", 3: "HardSwish"}
         skip_names = {0: "add", 1: "concat", 2: "none"}
+        pool_names = {0: "Max", 1: "Avg", 2: "None"}
+        pool_str = pool_names.get(self.pool_type, "Unknown")
+        
         return (f"BlockParams(out_ch={self.out_channels}, groups={self.groups}, "
-                f"pool_type={self.pool_type}, pool_stride={self.pool_stride}, "
-                f"has_senet={self.has_senet}, activation={activation_names.get(self.activation_type, 'ReLU')}, "
+                f"pool_type={pool_str}, pool_stride={self.pool_stride}, "
+                f"has_cbam={self.has_cbam}, activation={activation_names.get(self.activation_type, 'ReLU')}, "
                 f"dropout={self.dropout_rate}, skip={skip_names.get(self.skip_type, 'add')}, "
                 f"kernel_size={self.kernel_size}, expansion={self.expansion})")
 
@@ -214,7 +217,7 @@ class Encoder:
                         return False
                     if bp.pool_stride not in config.POOL_STRIDE_OPTIONS:
                         return False
-                    if bp.has_senet not in config.SENET_OPTIONS:
+                    if bp.has_cbam not in config.CBAM_OPTIONS:
                         return False
                     if bp.activation_type not in config.ACTIVATION_OPTIONS:
                         return False
@@ -352,16 +355,17 @@ class Encoder:
         for i, unit_blocks in enumerate(block_params_list):
             print(f"INFO: unit {i + 1} blocks={len(unit_blocks)}")
             for j, bp in enumerate(unit_blocks):
-                pool_type_str = "MaxPool" if bp.pool_type == 0 else "AvgPool"
-                senet_str = "Yes" if bp.has_senet == 1 else "No"
-                activation_names = {0: "ReLU", 1: "SiLU"}
+                pool_names = {0: "MaxPool", 1: "AvgPool", 2: "None"}
+                pool_type_str = pool_names.get(bp.pool_type, "Unknown")
+                cbam_str = "Yes" if bp.has_cbam == 1 else "No"
+                activation_names = {0: "ReLU", 1: "SiLU", 2: "GELU", 3: "HardSwish"}
                 skip_names = {0: "add", 1: "concat", 2: "none"}
                 activation_str = activation_names.get(bp.activation_type, "ReLU")
                 skip_str = skip_names.get(bp.skip_type, "add")
                 print(
                     "INFO: block "
                     f"{i + 1}.{j + 1} out_ch={bp.out_channels} groups={bp.groups} "
-                    f"pool={pool_type_str} stride={bp.pool_stride} senet={senet_str} "
+                    f"pool={pool_type_str} stride={bp.pool_stride} cbam={cbam_str} "
                     f"act={activation_str} dropout={bp.dropout_rate} skip={skip_str} "
                     f"kernel={bp.kernel_size} expansion={bp.expansion}"
                 )

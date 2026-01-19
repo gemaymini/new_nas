@@ -6,16 +6,18 @@ from configuration.config import config
 
 def calculate_search_space():
     # 基础参数选项数量 (不包含受约束的参数: out_channels, skip_type)
-    # groups(3) * pool_type(2) * pool_stride(2) * senet(2) * activation(1) * dropout(2) * kernel(2) * expansion(2)
+    # groups(3) * pool_type(3) * pool_stride(2) * cbam(2) * activation(4) * dropout(2) * kernel(2) * expansion(2)
     # = 192
-    base_complexity = len(config.GROUP_OPTIONS) * \
-                      len(config.POOL_TYPE_OPTIONS) * \
-                      len(config.POOL_STRIDE_OPTIONS) * \
-                      len(config.SENET_OPTIONS) * \
-                      len(config.ACTIVATION_OPTIONS) * \
-                      len(config.DROPOUT_OPTIONS) * \
-                      len(config.KERNEL_SIZE_OPTIONS) * \
-                      len(config.EXPANSION_OPTIONS)
+    combinations = (
+        len(config.GROUP_OPTIONS) *
+        len(config.POOL_TYPE_OPTIONS) *
+        len(config.POOL_STRIDE_OPTIONS) *
+        len(config.CBAM_OPTIONS) *
+        len(config.ACTIVATION_OPTIONS) *
+        len(config.DROPOUT_OPTIONS) *
+        len(config.KERNEL_SIZE_OPTIONS) *
+        len(config.EXPANSION_OPTIONS)
+    )
 
     total_space = 0
     
