@@ -40,7 +40,7 @@ class BlockParams:
         self.has_senet = has_senet
         self.activation_type = activation_type  # 0=ReLU, 1=SiLU
         self.dropout_rate = dropout_rate        # Dropout rate
-        self.skip_type = skip_type              # 0=add, 1=concat, 2=none
+        self.skip_type = skip_type              # 0=add, 1=concat
         self.expansion = expansion              # Block expansion: 1 or 2
         self.kernel_size = kernel_size          # Kernel size: 3 or 5
 
@@ -141,18 +141,32 @@ class Encoder:
         unit_num = encoding[0]
         block_nums = encoding[1:1 + unit_num]
 
+        # Determine block stride (legacy support for 9 params)
+        total_blocks = sum(block_nums)
+        header_len = 1 + unit_num
+        params_len = len(encoding) - header_len
+        
+        stride = BLOCK_PARAM_COUNT
+        if total_blocks > 0 and params_len == total_blocks * 9:
+            stride = 9
+
         block_params_list = []
         idx = 1 + unit_num
 
         for block_num in block_nums:
             unit_blocks = []
             for _ in range(block_num):
-                params = encoding[idx:idx + BLOCK_PARAM_COUNT]
-                if len(params) < BLOCK_PARAM_COUNT:
+                params = encoding[idx:idx + stride]
+                if len(params) < stride:
                     raise ValueError(f"Incomplete block params at index {idx}")
+                
+                # If legacy encoding (9 params), append default expansion (2)
+                if stride == 9:
+                    params = list(params) + [2]
+
                 block_params = BlockParams.from_list(params)
                 unit_blocks.append(block_params)
-                idx += BLOCK_PARAM_COUNT
+                idx += stride
             block_params_list.append(unit_blocks)
 
         return unit_num, block_nums, block_params_list
