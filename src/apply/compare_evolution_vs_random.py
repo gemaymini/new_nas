@@ -22,7 +22,7 @@ from configuration.config import config
 from core.encoding import Encoder, Individual
 from core.search_space import population_initializer
 # from search.mutation import mutation_operator, selection_operator, crossover_operator # No longer needed here
-from engine.evaluator import fitness_evaluator, clear_gpu_memory
+from engine.ntk_evaluator import fitness_evaluator, clear_gpu_memory
 # from utils.generation import generate_valid_child # No longer needed here
 from utils.logger import logger
 from utils.constraints import update_param_bounds_for_dataset

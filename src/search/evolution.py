@@ -16,7 +16,7 @@ from configuration.config import config
 from core.encoding import Encoder, Individual
 from core.search_space import population_initializer
 from search.mutation import mutation_operator, selection_operator, crossover_operator
-from engine.evaluator import fitness_evaluator, FinalEvaluator
+from engine.ntk_evaluator import fitness_evaluator, FinalEvaluator
 from utils.generation import generate_valid_child
 from utils.constraints import evaluate_encoding_params
 from utils.logger import logger, tb_logger

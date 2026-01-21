@@ -27,7 +27,7 @@ from configuration.config import config
 from core.search_space import population_initializer
 from models.network import NetworkBuilder
 from engine.trainer import NetworkTrainer
-from engine.evaluator import NTKEvaluator
+from engine.ntk_evaluator import NTKEvaluator
 from data.dataset import DatasetLoader
 from utils.logger import logger
 from utils.constraints import update_param_bounds_for_dataset

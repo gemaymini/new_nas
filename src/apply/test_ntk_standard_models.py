@@ -13,7 +13,7 @@ import traceback
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from configuration.config import config
-from engine.evaluator import NTKEvaluator
+from engine.ntk_evaluator import NTKEvaluator
 
 def get_cifar_compatible_resnet18():
     # ResNet18 adapted for CIFAR-10 (small input size)

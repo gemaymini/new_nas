@@ -108,7 +108,7 @@ def main():
     logger.info(f"Random Seed: {args.seed}")
     update_param_bounds_for_dataset(config.FINAL_DATASET)
 
-    from engine.evaluator import fitness_evaluator
+    from engine.ntk_evaluator import fitness_evaluator
     fitness_evaluator.reset()
 
     if config.DEVICE == "cuda" and not torch.cuda.is_available():

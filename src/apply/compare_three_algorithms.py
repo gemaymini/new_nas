@@ -25,7 +25,7 @@ from configuration.config import config
 from core.encoding import Encoder, Individual
 from core.search_space import population_initializer
 from search.mutation import mutation_operator, selection_operator, crossover_operator
-from engine.evaluator import fitness_evaluator, FinalEvaluator, clear_gpu_memory
+from engine.ntk_evaluator import fitness_evaluator, FinalEvaluator, clear_gpu_memory
 from models.network import NetworkBuilder
 from utils.generation import generate_valid_child
 from utils.logger import logger

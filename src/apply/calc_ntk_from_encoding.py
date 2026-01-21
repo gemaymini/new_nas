@@ -6,7 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.encoding import Individual
-from engine.evaluator import NTKEvaluator
+from engine.ntk_evaluator import NTKEvaluator
 from configuration.config import config
 
 # ==========================================
