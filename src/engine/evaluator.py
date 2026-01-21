@@ -143,7 +143,7 @@ class NTKEvaluator:
             conds.append(np.nan_to_num((eigenvalues[-1] / eigenvalues[0]).item(), copy=True, nan=100000.0))
         return conds[0]
 
-    def compute_ntk_score(self, network: nn.Module, num_runs: int = 12) -> float:
+    def compute_ntk_score(self, network: nn.Module, num_runs: int = 1) -> float:
         """
         Compute NTK score by averaging multiple runs (removing min/max).
         

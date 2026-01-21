@@ -18,7 +18,7 @@
 - `src/engine/` — NTK 评估、最终训练与训练器。
 - `src/models/` — 搜索架构的网络构建。
 - `src/utils/` — 日志、约束、个体生成辅助。
-- `src/apply/` — 实验与绘图脚本。
+- `src/apply/` — 实验、绘图与工具脚本（如 `compare_three_algorithms.py`, `retrain_model.py`）。
 - `tests/` — Pytest 套件，含重依赖 stub。
 
 ## 安装
@@ -51,18 +51,34 @@ python src/main.py --dataset cifar10
 
 ## 工作流
 1) **初始化种群**：`core.search_space.population_initializer` 在约束内采样有效编码。
-2) **NTK 打分**：`engine.evaluator.NTKEvaluator` 构网、检查参数量、计算 NTK 条件数（越低越好），非法/超限模型直接惩罚。
+2) **NTK 打分**：`engine.evaluator.NTKEvaluator` 构网、检查参数量、使用循环梯度累积计算 NTK 条件数（越低越好），非法/超限模型直接惩罚。
 3) **进化循环**：`search.evolution.AgingEvolutionNAS` 锦标赛选父、`utils.generation.generate_valid_child` 交叉/变异生成子代，评估 NTK，维护 FIFO 种群。
 4) **筛选训练**：Top NTK 先短训，Top 若干再全量训练（`engine.evaluator.FinalEvaluator` + `engine.trainer.NetworkTrainer`）。
 5) **产物**：检查点、NTK 历史 JSON/图、训练模型、日志等按配置目录输出。
 
 ## 实验/绘图脚本
-位于 `src/apply/`，可直接运行，例如：
+位于 `src/apply/`，可直接运行。
+
+**算法对比 (Evolution vs Random vs Three-Stage):**
 ```bash
-python src/apply/compare_evolution_vs_random.py --max_eval 50 --pop_size 10
-python src/apply/plot_ntk_curve.py --input logs/ntk_history.json
-python src/apply/ntk_correlation_experiment.py
+python src/apply/compare_three_algorithms.py --n_runs 3 --max_eval 50
 ```
+
+**模型重训练:**
+```bash
+python src/apply/retrain_model.py --model_path checkpoints/full_train_models/model_123.pth --epochs 100
+```
+
+**单图预测:**
+```bash
+python src/apply/predict.py --model_path checkpoints/unique_best_model.pth --image_path test_image.png
+```
+
+**其他工具:**
+- `src/apply/plot_ntk_curve.py`: 绘制 NTK 历史曲线。
+- `src/apply/ntk_correlation_experiment.py`: 分析 NTK 与准确率的相关性。
+- `src/apply/inspect_model.py`: 查看模型架构与参数。
+
 脚本默认使用 Agg 后端，可在无图形界面环境运行。
 
 ## 测试

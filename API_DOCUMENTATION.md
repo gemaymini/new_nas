@@ -166,6 +166,14 @@
         *   `network`: PyTorch 模型。
         *   `num_runs`: 重复计算次数以取平均。
     *   **输出参数**: `float` (NTK 分数)。
+    
+*   **`compute_ntk_condition_number`**
+    *   **作用**: 使用循环梯度累积计算 NTK 条件数（优化显存）。
+    *   **输入参数**:
+        *   `network`: 模型。
+        *   `xloader`: 数据加载器。
+        *   `num_batch`: Batch 数。
+    *   **输出参数**: `float` (条件数)。
 
 #### `FinalEvaluator` 类
 **作用**: 负责模型的实际训练和验证（短期或长期）。
@@ -230,10 +238,38 @@
 
 *   **`Logger` 类**: 封装了 Python `logging` 模块，提供标准化的日志输出格式（控制台+文件）。
 *   **`OperationLogger` 类**: 专门用于将进化操作（交叉、变异详细信息）记录为 JSONL 文件。
+*   **`FailedLogger` 类**: 记录生成或训练失败的个体信息。
+    *   **主要方法**: `save_failed_individual(ind, reason, gen)`
 
 ---
 
 ## 5. Applications (应用脚本)
+
+### `src/apply/compare_three_algorithms.py`
+**作用**: 对比三种搜索策略（三阶段EA、传统EA、随机搜索）并绘制帕累托前沿。
+*   **主要参数**:
+    *   `--ts_ntk_evals`: 三阶段EA的第一阶段 NTK 评估次数。
+    *   `--te_evals`: 传统老化进化的评估次数。
+    *   `--rs_samples`: 随机搜索的样本数。
+    *   `--dataset`: 数据集 (cifar10/cifar100)。
+    *   `--quick_test`: 快速测试模式（大幅减少评估次数）。
+*   **输出**: 
+    *   `experiment_results/experiment_results_TIMESTAMP.json`: 详细的一组实验数据。
+    *   `experiment_results/pareto_comparison.png`: 帕累托前沿对比图。
+
+### `src/apply/ntk_correlation_experiment.py`
+**作用**: 运行批量 NTK 评估与短期训练，分析两者相关性。
+*   **主要参数**:
+    *   `--num_models`: 采样的模型数量。
+    *   `--short_epochs`: 短期训练的 Epoch 数。
+*   **输出**:
+    *   `ntk_experiment_results/ntk_correlation_plot.png`: 相关性散点图。
+    *   JSON 日志文件。
+
+### `src/apply/inspect_model.py`
+**作用**: 查看并打印已保存模型检查点的架构详情。
+*   **主要参数**: `model_path` (必需)。
+*   **输出**: 控制台打印模型编码、层级结构及参数量。
 
 ### `src/apply/predict.py`
 **作用**: 使用训练好的模型进行单张图片预测。
@@ -246,9 +282,3 @@
 *   **主要函数**: `retrain_model(...)`
     *   **输入**: 模型路径、训练轮数、重复次数、数据集名称等。
     *   **输出**: `dict` (包含多次运行的平均准确率、标准差等统计信息)。
-
-### `src/apply/compare_three_algorithms.py`
-**作用**: 对比三种搜索策略（三阶段EA、传统EA、随机搜索）并绘制帕累托前沿。
-*   **主要类**: `ThreeStageEA`, `TraditionalEA`, `RandomSearchAlgorithm`。
-*   **输入**: 各自的运行参数（评估次数、种群大小等）。
-*   **输出**: 生成包含性能对比的 JSON 结果和 PNG/PDF 图表。

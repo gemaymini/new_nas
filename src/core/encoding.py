@@ -230,12 +230,7 @@ class Encoder:
                     if bp.expansion not in config.EXPANSION_OPTIONS:
                         return False
 
-            # Concat skips are only allowed at the last block of each unit.
-            for unit_blocks in block_params_list:
-                last_idx = len(unit_blocks) - 1
-                for idx, bp in enumerate(unit_blocks):
-                    if bp.skip_type == 1 and idx != last_idx:
-                        return False
+
 
             if not Encoder.validate_feature_size(encoding):
                 print("WARN: feature map too small")

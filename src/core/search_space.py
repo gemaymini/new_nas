@@ -61,12 +61,9 @@ class SearchSpace:
     def sample_dropout(self) -> float:
         return random.choice(self.dropout_options)
 
-    def sample_skip_type(self, allow_concat: bool = True) -> int:
+    def sample_skip_type(self) -> int:
         # Skip types: 0=add, 1=concat.
-        options = self.skip_type_options if allow_concat else [
-            opt for opt in self.skip_type_options if opt != 1
-        ]
-        return random.choice(options)
+        return random.choice(self.skip_type_options)
 
     def sample_kernel_size(self) -> int:
         return random.choice(self.kernel_size_options)
@@ -76,17 +73,13 @@ class SearchSpace:
         return random.choice(self.expansion_options)
 
 
-    def sample_block_params(self, allow_concat: bool = True) -> BlockParams:
+    def sample_block_params(self) -> BlockParams:
         """
         Sample a complete set of parameters for a single block.
-
-        Args:
-            allow_concat (bool): Whether to allow 'concat' skip connection.
 
         Returns:
             BlockParams: Sampled block parameters.
         """
-        # allow_concat limits concat skips to the last block in a unit.
         out_channels = self.sample_channel()
         groups = self.sample_groups()
         pool_type = self.sample_pool_type()
@@ -94,7 +87,7 @@ class SearchSpace:
         has_cbam = self.sample_cbam()
         activation_type = self.sample_activation()
         dropout_rate = self.sample_dropout()
-        skip_type = self.sample_skip_type(allow_concat=allow_concat)
+        skip_type = self.sample_skip_type()
         kernel_size = self.sample_kernel_size()
         expansion = self.sample_expansion()
         return BlockParams(out_channels, groups, pool_type, pool_stride, has_cbam,
@@ -157,14 +150,10 @@ class PopulationInitializer:
 
         for unit_idx, block_num in enumerate(block_nums):
             for block_idx in range(block_num):
-                # Only the last block in a unit may use concat skips.
-                is_last_block = block_idx == block_num - 1
                 # Try to generate valid block params, up to 10 attempts.
                 accepted = False
                 for _ in range(10):
-                    block_params = self.search_space.sample_block_params(
-                        allow_concat=is_last_block
-                    )
+                    block_params = self.search_space.sample_block_params()
 
                     final_stride = block_params.pool_stride
                     if downsampling_count >= max_downsampling and final_stride == 2:

@@ -18,7 +18,7 @@ This project implements an evolutionary NAS framework that screens candidate arc
 - `src/engine/` — Evaluators (NTK + final training) and trainer.
 - `src/models/` — Network builder for searched architectures.
 - `src/utils/` — Logging, constraints, offspring generation helpers.
-- `src/apply/` — Experiment and plotting scripts.
+- `src/apply/` — Experiment, plotting, and utility scripts (e.g., `compare_three_algorithms.py`, `retrain_model.py`).
 - `tests/` — Pytest suite with lightweight stubs for heavy deps.
 
 ## Installation
@@ -51,18 +51,34 @@ Key optional flags (see `parse_args` in `src/main.py`):
 
 ## How It Works
 1) **Population initialization**: `core.search_space.population_initializer` samples valid encodings within constraints.
-2) **Fitness (NTK)**: `engine.evaluator.NTKEvaluator` builds a network, checks parameter bounds, computes NTK condition number (lower is better). Invalid or oversized models are penalized.
+2) **Fitness (NTK)**: `engine.evaluator.NTKEvaluator` builds a network, checks parameter bounds, computes NTK condition number via loop-based gradient accumulation (lower is better). Invalid or oversized models are penalized.
 3) **Evolution loop**: `search.evolution.AgingEvolutionNAS` selects parents (tournament), generates offspring (`utils.generation.generate_valid_child` with crossover/mutation), evaluates NTK, and maintains a FIFO population.
 4) **Screening & training**: Top NTK models undergo short training; best few get full training via `engine.evaluator.FinalEvaluator` and `engine.trainer.NetworkTrainer`.
 5) **Artifacts**: Checkpoints, NTK history JSON/plots, trained models, and logs are written under configured directories.
 
 ## Running Experiments/Plots
-All scripts live in `src/apply/` and are runnable as stand-alone modules, e.g.:
+All scripts live in `src/apply/` and are runnable as stand-alone modules.
+
+**Compare Algorithms (Evolution vs Random vs Three-Stage):**
 ```bash
-python src/apply/compare_evolution_vs_random.py --max_eval 50 --pop_size 10
-python src/apply/plot_ntk_curve.py --input logs/ntk_history.json
-python src/apply/ntk_correlation_experiment.py
+python src/apply/compare_three_algorithms.py --n_runs 3 --max_eval 50
 ```
+
+**Retrain Specific Model:**
+```bash
+python src/apply/retrain_model.py --model_path checkpoints/full_train_models/model_123.pth --epochs 100
+```
+
+**Predict Single Image:**
+```bash
+python src/apply/predict.py --model_path checkpoints/unique_best_model.pth --image_path test_image.png
+```
+
+**Other Utilities:**
+- `src/apply/plot_ntk_curve.py`: Plot NTK history from logs.
+- `src/apply/ntk_correlation_experiment.py`: Analyze correlation between NTK score and accuracy.
+- `src/apply/inspect_model.py`: View model architecture and parameters.
+
 These scripts use Agg backend by default; they should run headless.
 
 ## Extending the Search Space

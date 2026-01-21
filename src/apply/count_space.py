@@ -40,7 +40,7 @@ def calculate_search_space():
                     # === 计算单个 Block 的可能性 ===
                     
                     # 1. 基础复杂度
-                    block_opts = base_complexity
+                    block_opts = combinations
                     
                     # 2. Channel 选项 (受 u_idx 约束)
                     # Constraint: 64 only in first unit (u_idx == 0)
@@ -54,14 +54,8 @@ def calculate_search_space():
                         valid_channels += 1
                     block_opts *= valid_channels
                     
-                    # 3. Skip Type 选项 (受 b_idx 约束)
-                    # Constraint: Concat (1) only allowed at last block of unit
-                    valid_skips = 0
-                    is_last_block = (b_idx == block_num - 1)
-                    for skip in config.SKIP_TYPE_OPTIONS:
-                        if skip == config.SKIP_TYPE_CONCAT and not is_last_block:
-                            continue
-                        valid_skips += 1
+                    # 3. Skip Type 选项
+                    valid_skips = len(config.SKIP_TYPE_OPTIONS)
                     block_opts *= valid_skips
                     
                     config_complexity *= block_opts
