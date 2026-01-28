@@ -116,8 +116,26 @@ class NTKEvaluator:
         ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
         conds = []
         for ntk in ntks:
-            eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
-            conds.append(np.nan_to_num((eigenvalues[-1] / eigenvalues[0]).item(), copy=True, nan=100000.0))
+            try:
+                # Use robust eigenvalue calculation
+                eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
+                
+                # Enforce PSD (Positive Semi-Definite) property by clamping small/negative values to a small epsilon
+                # This handles numerical instability where eigenvalues might be slightly negative (-1e-8)
+                eigenvalues = torch.clamp(eigenvalues, min=1e-6)
+                
+                # Check for NaNs
+                if torch.isnan(eigenvalues).any():
+                     logger.warning("NaN detected in eigenvalues")
+                     conds.append(100000.0)
+                     continue
+
+                condition_number = (eigenvalues[-1] / eigenvalues[0]).item()
+                conds.append(np.nan_to_num(condition_number, copy=True, nan=100000.0))
+            except Exception as e:
+                logger.warning(f"NTK eigenvalue computation failed: {e}")
+                conds.append(100000.0)
+                
         return conds[0]
 
     def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 1) -> float:
