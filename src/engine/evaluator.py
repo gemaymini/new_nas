@@ -63,75 +63,75 @@ class NTKEvaluator:
                 _ = network(inputs)
         return network
 
-    def compute_ntk_condition_number(self, network: nn.Module, xloader, num_batch: int = -1, train_mode: bool = True) -> float:
-        """严格按照 ntk.py 中的 get_ntk_n 逻辑计算单个网络的 NTK 条件数"""
-        device = self.device if self.device == 'cpu' else 0
+    def compute_ntk_condition_number(
+        self,
+        network: nn.Module,
+        xloader,
+        num_batch: int = 1,
+        train_mode: bool = False,
+    ) -> float:
+        """
+        Compute NTK condition number using loop-based gradient accumulation.
 
-        # ✅ 修复1: 使用 train 模式
-        if train_mode:
-            network.train()
-        else:
-            network.eval()
+        Args:
+            network (nn.Module): The neural network.
+            xloader: Data loader.
+            num_batch (int): Limit number of batches.
+            train_mode (bool): Whether to set model to train mode.
+
+        Returns:
+            float: The NTK condition number.
+        """
+        device = torch.cuda.current_device() if self.device == 'cuda' else 'cpu'
+        networks = [network]
         
-        grads = []
+        for net in networks:
+            if train_mode:
+                net.train()
+            else:
+                net.eval()
 
-        for i, (inputs, _) in enumerate(xloader):
+        grads = [[] for _ in range(len(networks))]
+        for i, (inputs, targets) in enumerate(xloader):
             if num_batch > 0 and i >= num_batch:
                 break
             inputs = inputs.to(device=device, non_blocking=True)
+            for net_idx, net in enumerate(networks):
+                net.zero_grad()
+                inputs_ = inputs.clone().to(device=device, non_blocking=True)
+                logit = net(inputs_)
+                if isinstance(logit, tuple):
+                    logit = logit[1]
+                for _idx in range(len(inputs_)):
+                    logit[_idx:_idx+1].backward(torch.ones_like(logit[_idx:_idx+1]), retain_graph=True)
+                    grad = []
+                    for name, W in net.named_parameters():
+                        if 'weight' in name and W.grad is not None:
+                            grad.append(W.grad.view(-1).detach())
+                    grads[net_idx].append(torch.cat(grad, -1))
+                    net.zero_grad()
+                    torch.cuda.empty_cache()
 
-            network.zero_grad()
-            logit = network(inputs)
-            if isinstance(logit, tuple):
-                logit = logit[1]
+        grads = [torch.stack(_grads, 0) for _grads in grads]
+        ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
+        conds = []
+        for ntk in ntks:
+            eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
+            conds.append(np.nan_to_num((eigenvalues[-1] / eigenvalues[0]).item(), copy=True, nan=100000.0))
+        return conds[0]
 
-            for idx in range(inputs.size(0)):
-                logit[idx:idx + 1].backward(torch.ones_like(logit[idx:idx + 1]), retain_graph=True)
-
-                grad = []
-                for name, p in network.named_parameters():
-                    if 'weight' in name and p.grad is not None:
-                        grad.append(p.grad.view(-1).detach().clone())  # ✅ 需要 clone，防止 zero_grad 清空
-
-                if grad:
-                    grads.append(torch.cat(grad, -1))  # ✅ 加上 dim=-1 保持一致
-
-                network.zero_grad()  # ✅ 移到这里，和原始代码一致
-                # torch.cuda.empty_cache() # 移出循环以提升速度
-
-        if len(grads) == 0:
-            return 100000.0
-
-        grads_tensor = torch.stack(grads, 0)  # (N, C)
-        ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])  # ✅ 注意括号格式
-
-        # 计算特征值
-        try:
-            eigenvalues = torch.linalg.eigvalsh(ntk)
-        except Exception as e:
-            logger.warning(f"Failed to compute eigenvalues: {e}")
-            return 100000.0
-
-        # 使用绝对值避免负特征值导致的负条件数
-        eigenvalues_abs = torch.abs(eigenvalues)
-        max_eigen = eigenvalues_abs.max().item()
-        min_eigen = eigenvalues_abs.min().item()
+    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 1) -> float:
+        """
+        Compute NTK score by averaging multiple runs (removing min/max if num_runs > 2).
         
-        # 避免除零
-        if min_eigen < 1e-10:
-            cond = 100000.0
-        else:
-            cond = max_eigen / min_eigen
-        cond = np.nan_to_num(cond, nan=100000.0, posinf=100000.0, neginf=100000.0)
+        Args:
+            network (nn.Module): The model.
+            param_count (int, optional): Parameter count for threshold check.
+            num_runs (int): Number of independent NTK calculations to average.
 
-        del grads, grads_tensor, ntk, eigenvalues
-        clear_gpu_memory()
-
-        return cond
-
-
-    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
-        """计算 NTK 分数，多次运行取平均"""
+        Returns:
+            float: Averaged NTK condition number.
+        """
         try:
             if param_count and param_count > self.param_threshold:
                 logger.warning(f"Skipping NTK: params {param_count} > threshold {self.param_threshold}")
@@ -142,17 +142,23 @@ class NTKEvaluator:
             if self.recalbn > 0:
                 network = self.recal_bn(network, self.trainloader, self.recalbn, self.device)
 
-            # ✅ 修复3: 多次计算取平均
-            total_cond = 0.0
+            cond_scores = []
             for _ in range(num_runs):
-                cond = self.compute_ntk_condition_number(
-                    network, self.trainloader, 
-                    num_batch=self.num_batch, 
-                    train_mode=True  # ✅ 使用 train 模式
+                score = self.compute_ntk_condition_number(
+                    network,
+                    self.trainloader,
+                    num_batch=self.num_batch,
+                    train_mode=False,
                 )
-                total_cond += cond
+                cond_scores.append(score)
+
+            # 如果运行次数 > 2，移除最大和最小值再求平均
+            if len(cond_scores) > 2:
+                cond_scores.remove(max(cond_scores))
+                cond_scores.remove(min(cond_scores))
             
-            return round(total_cond / num_runs, 3)
+            avg_score = sum(cond_scores) / len(cond_scores)
+            return round(avg_score, 3)
 
         except Exception as e:
             logger.error(f"NTK computation failed: {e}")
