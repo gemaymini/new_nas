@@ -15,8 +15,8 @@ class Config:
 
     # ==================== Evolution parameters ====================
     POPULATION_SIZE = 100         # Aging Evolution queue size
-    MAX_GEN = 2500                 # Total individuals evaluated in search
-    TOURNAMENT_SIZE = 3            # Tournament sample size
+    MAX_GEN = 20000                 # Total individuals evaluated in search
+    TOURNAMENT_SIZE = 5            # Tournament sample size
     TOURNAMENT_WINNERS = 2         # Tournament winners (parent count)
 
     # ==================== Screening/training pipeline ====================

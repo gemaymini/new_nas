@@ -125,7 +125,8 @@ def main():
 
     try:
         nas.run_search()
-        nas.run_screening_and_training()
+        if not args.no_final_eval:
+            nas.run_screening_and_training()
     except KeyboardInterrupt:
         logger.warning("Interrupted by user")
         nas.save_checkpoint()
