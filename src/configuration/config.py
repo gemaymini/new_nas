@@ -29,12 +29,12 @@ class Config:
     
     # ==================== 网络堆叠参数 ====================
     INIT_CHANNELS = 36               # 初始通道数 (论文默认 36)
-    CELLS_PER_STAGE = 4              # 每个 Stage 的 Normal Cell 数量
+    CELLS_PER_STAGE = 8              # 每个 Stage 的 Normal Cell 数量
     NUM_STAGES = 3                   # Stage 数量 (3 个 stage = 2 个 reduction)
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 50            # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 500                   # 最大进化代数
+    POPULATION_SIZE = 100            # 种群大小 (Aging Evolution Queue Size)
+    MAX_GEN = 2000                   # 最大进化代数
     TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
     
@@ -43,7 +43,7 @@ class Config:
     SHORT_TRAIN_EPOCHS = 30          # 第一轮筛选：短期训练轮数
     
     HISTORY_TOP_N2 = 5               # 第二轮筛选：基于验证集Acc选择Top N2
-    FULL_TRAIN_EPOCHS = 300          # 最终训练：完整训练轮数
+    FULL_TRAIN_EPOCHS = 500          # 最终训练：完整训练轮数
     
     # ==================== 交叉/变异参数 ====================
     PROB_CROSSOVER = 0.5             # 交叉概率
@@ -88,6 +88,10 @@ class Config:
     # ==================== 其他参数 ====================
     RANDOM_SEED = 42                # 固定默认种子，可通过命令行参数覆盖
     NUM_WORKERS = 8                 
+
+    # ==================== 正则化参数 ====================
+    CUTOUT_LENGTH = 16              # Cutout 长度
+    DROPOUT_RATE = 0.2              # Dropout 比率
 
     def get_search_space_summary(self) -> str:
         """获取搜索空间的摘要字符串"""

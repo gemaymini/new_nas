@@ -308,6 +308,7 @@ class DARTSNetwork(nn.Module):
         
         # Classifier
         self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.dropout = nn.Dropout(config.DROPOUT_RATE)
         self.classifier = nn.Linear(C_prev, num_classes)
         
         # 保存编码
@@ -323,6 +324,7 @@ class DARTSNetwork(nn.Module):
         
         out = self.global_pool(s1)
         out = out.view(out.size(0), -1)
+        out = self.dropout(out)
         out = self.classifier(out)
         
         return out

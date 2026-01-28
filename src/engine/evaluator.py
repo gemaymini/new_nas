@@ -70,6 +70,10 @@ class NTKEvaluator:
         # ✅ 修复1: 使用 train 模式
         if train_mode:
             network.train()
+            # 必须关闭 Dropout，确保 NTK 计算的确定性
+            for m in network.modules():
+                if isinstance(m, nn.Dropout):
+                    m.eval()
         else:
             network.eval()
         
