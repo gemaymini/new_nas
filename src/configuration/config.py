@@ -29,12 +29,12 @@ class Config:
     
     # ==================== 网络堆叠参数 ====================
     INIT_CHANNELS = 36               # 初始通道数 (论文默认 36)
-    CELLS_PER_STAGE = 4              # 每个 Stage 的 Normal Cell 数量
+    CELLS_PER_STAGE = 8              # 每个 Stage 的 Normal Cell 数量
     NUM_STAGES = 3                   # Stage 数量 (3 个 stage = 2 个 reduction)
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 50            # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 500                   # 最大进化代数
+    POPULATION_SIZE = 1000            # 种群大小 (Aging Evolution Queue Size)
+    MAX_GEN = 5000                   # 最大进化代数
     TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
     

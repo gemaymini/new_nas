@@ -246,7 +246,8 @@ class DARTSNetwork(nn.Module):
     
     def __init__(self, normal_cell: CellEncoding, reduction_cell: CellEncoding, 
                  num_classes: int = 10, init_channels: int = None,
-                 cells_per_stage: int = None, num_stages: int = None):
+                 cells_per_stage: int = None, num_stages: int = None,
+                 enable_dropout: bool = True):
         """
         Args:
             normal_cell: Normal Cell 编码
@@ -255,8 +256,11 @@ class DARTSNetwork(nn.Module):
             init_channels: 初始通道数
             cells_per_stage: 每个 Stage 的 Cell 数量
             num_stages: Stage 数量
+            enable_dropout: 是否启用 Dropout (NTK 评估时应设为 False)
         """
         super().__init__()
+        
+        self.enable_dropout = enable_dropout
         
         self.num_classes = num_classes
         C = init_channels or config.INIT_CHANNELS
@@ -308,6 +312,7 @@ class DARTSNetwork(nn.Module):
         
         # Classifier
         self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.dropout = nn.Dropout(0.2)  # Dropout 正则化
         self.classifier = nn.Linear(C_prev, num_classes)
         
         # 保存编码
@@ -323,6 +328,8 @@ class DARTSNetwork(nn.Module):
         
         out = self.global_pool(s1)
         out = out.view(out.size(0), -1)
+        if self.enable_dropout:
+            out = self.dropout(out)  # 仅在训练时应用 Dropout
         out = self.classifier(out)
         
         return out

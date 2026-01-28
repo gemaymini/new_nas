@@ -168,7 +168,8 @@ class NTKEvaluator:
         try:
             network = NetworkBuilder.build_from_individual(
                 individual,
-                num_classes=self.num_classes
+                num_classes=self.num_classes,
+                enable_dropout=False  # NTK 评估时禁用 Dropout
             )
             param_count = network.get_param_count()
             individual.param_count = param_count
