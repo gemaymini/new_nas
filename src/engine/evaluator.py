@@ -105,11 +105,12 @@ class NTKEvaluator:
         grads_tensor = torch.stack(grads, 0)  # (N, C)
         ntk = torch.einsum('nc,mc->nm', [grads_tensor, grads_tensor])  # ✅ 注意括号格式
 
-        # ✅ 修复2: 正确处理特征值
+        # 计算特征值
         try:
-            eigenvalues = torch.linalg.eigvalsh(ntk)  # 只返回特征值，更高效
-        except AttributeError:
-            eigenvalues, _ = torch.symeig(ntk)  # ✅ 正确解包
+            eigenvalues = torch.linalg.eigvalsh(ntk)
+        except Exception as e:
+            logger.warning(f"Failed to compute eigenvalues: {e}")
+            return 100000.0
 
         # 使用绝对值避免负特征值导致的负条件数
         eigenvalues_abs = torch.abs(eigenvalues)
@@ -161,7 +162,6 @@ class NTKEvaluator:
         try:
             network = NetworkBuilder.build_from_individual(
                 individual,
-                input_channels=self.input_size[0],
                 num_classes=self.num_classes
             )
             param_count = network.get_param_count()
@@ -289,10 +289,10 @@ class FinalEvaluator:
 
         logger.info(f"Training individual {individual.id} for {epochs} epochs...")
         network = NetworkBuilder.build_from_individual(
-            individual, input_channels=3, num_classes=self.num_classes
+            individual, num_classes=self.num_classes
         )
         param_count = network.get_param_count()
-        Encoder.print_architecture(individual.encoding)
+        Encoder.print_architecture(individual)
 
         start_time = time.time()
         best_acc, history = self.trainer.train_network(
@@ -305,16 +305,20 @@ class FinalEvaluator:
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, f'model_{individual.id}_acc{best_acc:.2f}.pth')
 
+        # 保存genotype格式
+        genotype = Encoder.get_genotype(individual)
         save_dict = {
             'state_dict': network.state_dict(),
-            'encoding': individual.encoding,
+            'genotype': genotype,
+            'normal_cell': individual.normal_cell.to_list(),
+            'reduction_cell': individual.reduction_cell.to_list(),
             'accuracy': best_acc,
             'param_count': param_count,
             'history': history
         }
         torch.save(save_dict, save_path)
         logger.info(f"Saved model to {save_path}")
-        logger.info(f"Model {individual.id} Architecture Encoding: {individual.encoding}")
+        logger.info(f"Model {individual.id} Genotype: {genotype}")
         
         # 生成并保存训练曲线图到 logs 目录
         plot_dir = os.path.join(config.LOG_DIR, 'training_curves')
@@ -337,7 +341,7 @@ class FinalEvaluator:
             'best_accuracy': best_acc,
             'train_time': train_time,
             'history': history,
-            'encoding': individual.encoding,
+            'genotype': genotype,
             'model_path': save_path,
             'plot_path': plot_path
         }
@@ -358,7 +362,7 @@ class FinalEvaluator:
         best_accuracy = 0.0
 
         for idx, individual in enumerate(top_individuals):
-            print(f"\n[{idx + 1}/{top_k}] Evaluating Individual {individual.id}")
+            logger.info(f"[{idx + 1}/{top_k}] Evaluating Individual {individual.id}")
             acc, result = self.evaluate_individual(individual, epochs)
             results.append(result)
 

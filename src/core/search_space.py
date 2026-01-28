@@ -1,133 +1,161 @@
 # -*- coding: utf-8 -*-
 """
-搜索空间模块
-定义搜索空间和随机生成逻辑
+DARTS 搜索空间模块
+定义 DARTS 搜索空间和随机生成逻辑
 """
 import random
 from typing import List, Optional
 from configuration.config import config
-from core.encoding import Encoder, Individual, BlockParams
+from core.encoding import CellEncoding, Individual, Edge
 from utils.logger import logger
 
-class SearchSpace:
+
+class DARTSSearchSpace:
     """
-    搜索空间定义类
+    DARTS 搜索空间定义类
+    
+    搜索空间包含:
+    - Cell 拓扑结构 (DAG)
+    - 边上的操作类型
     """
+    
     def __init__(self):
-        self.min_unit_num = config.MIN_UNIT_NUM
-        self.max_unit_num = config.MAX_UNIT_NUM
-        self.min_block_num = config.MIN_BLOCK_NUM
-        self.max_block_num = config.MAX_BLOCK_NUM
-        self.channel_options = config.CHANNEL_OPTIONS
-        self.group_options = config.GROUP_OPTIONS
-        self.pool_type_options = config.POOL_TYPE_OPTIONS
-        self.pool_stride_options = config.POOL_STRIDE_OPTIONS
-        self.senet_options = config.SENET_OPTIONS
-        # 新增参数选项
-        self.activation_options = config.ACTIVATION_OPTIONS
-        self.dropout_options = config.DROPOUT_OPTIONS
-        self.skip_type_options = config.SKIP_TYPE_OPTIONS
-        self.kernel_size_options = config.KERNEL_SIZE_OPTIONS
+        self.num_nodes = config.NUM_NODES
+        self.edges_per_node = config.EDGES_PER_NODE
+        self.operations = config.OPERATIONS
+        self.num_operations = len(self.operations)
     
-    def sample_unit_num(self) -> int:
-        return random.randint(self.min_unit_num, self.max_unit_num)
+    def get_valid_sources(self, node_idx: int) -> List[int]:
+        """
+        获取指定节点的有效输入来源
+        
+        Args:
+            node_idx: 中间节点索引 (0 到 NUM_NODES-1)
+        
+        Returns:
+            有效来源列表 [Input_0, Input_1, Node_0, ..., Node_{node_idx-1}]
+        """
+        # Input_0 = 0, Input_1 = 1, Node_0 = 2, Node_1 = 3, ...
+        return list(range(2 + node_idx))
     
-    def sample_block_num(self) -> int:
-        return random.randint(self.min_block_num, self.max_block_num)
+    def sample_edge(self, node_idx: int) -> Edge:
+        """
+        随机采样一条边
+        
+        Args:
+            node_idx: 目标节点索引
+        
+        Returns:
+            随机生成的边
+        """
+        valid_sources = self.get_valid_sources(node_idx)
+        source = random.choice(valid_sources)
+        op_id = random.randint(0, self.num_operations - 1)
+        return Edge(source=source, op_id=op_id)
     
-    def sample_channel(self) -> int:
-        return random.choice(self.channel_options)
+    def sample_cell(self) -> CellEncoding:
+        """
+        随机采样一个 Cell 结构
+        
+        Returns:
+            随机生成的 Cell 编码
+        """
+        edges = []
+        for node_idx in range(self.num_nodes):
+            node_edges = [self.sample_edge(node_idx) for _ in range(self.edges_per_node)]
+            edges.append(node_edges)
+        return CellEncoding(edges=edges)
     
-    def sample_groups(self, out_channels: int = None) -> int:
-        """采样分组数，确保 out_channels 能被 groups 整除"""
-        if out_channels is None:
-            return random.choice(self.group_options)
-        # groups 必须 <= out_channels 且 out_channels % groups == 0
-        valid_groups = [g for g in self.group_options if g <= out_channels and out_channels % g == 0]
-        return random.choice(valid_groups) if valid_groups else 1
+    def sample_individual(self) -> Individual:
+        """
+        采样一个完整个体 (包含 Normal Cell 和 Reduction Cell)
+        
+        Returns:
+            随机生成的个体
+        """
+        normal_cell = self.sample_cell()
+        reduction_cell = self.sample_cell()
+        return Individual(normal_cell=normal_cell, reduction_cell=reduction_cell)
     
-    def sample_pool_type(self) -> int:
-        return random.choice(self.pool_type_options)
+    def sample_operation(self) -> int:
+        """随机采样一个操作 ID"""
+        return random.randint(0, self.num_operations - 1)
     
-    def sample_pool_stride(self) -> int:
-        return random.choice(self.pool_stride_options)
+    def sample_source(self, node_idx: int) -> int:
+        """随机采样一个有效来源"""
+        return random.choice(self.get_valid_sources(node_idx))
     
-    def sample_senet(self) -> int:
-        return random.choice(self.senet_options)
+    def get_operation_name(self, op_id: int) -> str:
+        """获取操作名称"""
+        if 0 <= op_id < len(self.operations):
+            return self.operations[op_id]
+        return f"unknown_op_{op_id}"
     
-    def sample_activation(self) -> int:
-        """采样激活函数类型: 0=ReLU, 1=SiLU, 2=GELU"""
-        return random.choice(self.activation_options)
-    
-    def sample_dropout(self) -> float:
-        """采样Dropout率"""
-        return random.choice(self.dropout_options)
-    
-    def sample_skip_type(self) -> int:
-        """采样跳跃连接类型: 0=add, 1=concat, 2=none"""
-        return random.choice(self.skip_type_options)
-    
-    def sample_kernel_size(self) -> int:
-        """采样卷积核大小: 3, 5, 7"""
-        return random.choice(self.kernel_size_options)
-    
-    def sample_block_params(self) -> BlockParams:
-        out_channels = self.sample_channel()
-        groups = self.sample_groups(out_channels)
-        pool_type = self.sample_pool_type()
-        pool_stride = self.sample_pool_stride()
-        has_senet = self.sample_senet()
-        # 新增参数
-        activation_type = self.sample_activation()
-        dropout_rate = self.sample_dropout()
-        skip_type = self.sample_skip_type()
-        kernel_size = self.sample_kernel_size()
-        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
-                           activation_type, dropout_rate, skip_type, kernel_size)
+    def get_operation_id(self, op_name: str) -> int:
+        """获取操作 ID"""
+        try:
+            return self.operations.index(op_name)
+        except ValueError:
+            return -1
+
 
 class PopulationInitializer:
     """
     种群初始化器
     """
-    def __init__(self, search_space: SearchSpace):
+    
+    def __init__(self, search_space: DARTSSearchSpace):
         self.search_space = search_space
     
     def create_valid_individual(self, max_attempts: int = 1000) -> Optional[Individual]:
+        """
+        创建一个有效的个体
+        
+        DARTS Cell 编码总是有效的，因为采样时已保证约束
+        
+        Args:
+            max_attempts: 最大尝试次数 (保留参数以兼容接口)
+        
+        Returns:
+            有效的个体
+        """
+        individual = self.search_space.sample_individual()
+        
+        if individual.validate():
+            return individual
+        
+        # 理论上不应该到达这里
+        logger.warning("Generated individual failed validation, retrying...")
         for _ in range(max_attempts):
-            encoding = self._create_constrained_encoding()
-            if Encoder.validate_encoding(encoding):
-                return Individual(encoding)
-        logger.warning(f"Failed to create valid individual after {max_attempts} attempts")
+            individual = self.search_space.sample_individual()
+            if individual.validate():
+                return individual
+        
+        logger.error(f"Failed to create valid individual after {max_attempts} attempts")
         return None
-
-            
     
-    def _create_constrained_encoding(self) -> List[int]:
-        max_downsampling = Encoder.get_max_downsampling()
-        unit_num = self.search_space.sample_unit_num()
-        encoding = [unit_num]
-        block_nums = []
+    def initialize_population(self, population_size: int) -> List[Individual]:
+        """
+        初始化种群
         
-        for _ in range(unit_num):
-            block_num = self.search_space.sample_block_num()
-            block_nums.append(block_num)
-            encoding.append(block_num)
+        Args:
+            population_size: 种群大小
         
-        downsampling_count = 0
+        Returns:
+            个体列表
+        """
+        population = []
+        for _ in range(population_size):
+            individual = self.create_valid_individual()
+            if individual is not None:
+                population.append(individual)
+            else:
+                logger.warning("Failed to create individual, using fallback")
+                population.append(self.search_space.sample_individual())
         
-        for block_num in block_nums:
-            for _ in range(block_num):
-                block_params = self.search_space.sample_block_params()
-                
-                if downsampling_count >= max_downsampling and block_params.pool_stride == 2:
-                    block_params.pool_stride = 1
-                elif block_params.pool_stride == 2:
-                    downsampling_count += 1
-                
-                encoding.extend(block_params.to_list())
-        
-        return encoding
+        return population
+
 
 # Global instances
-search_space = SearchSpace()
+search_space = DARTSSearchSpace()
 population_initializer = PopulationInitializer(search_space)

@@ -9,14 +9,11 @@ import os
 import random
 import numpy as np
 
-# Add src to python path
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
-
 from configuration.config import config
 from search.evolution import AgingEvolutionNAS
 from core.encoding import Encoder
 from models.network import NetworkBuilder
-from utils.logger import logger, tb_logger
+from utils.logger import logger
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -30,10 +27,6 @@ def set_seed(seed: int):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Evolutionary NAS')
-    
-    # Evolution params
-    parser.add_argument('--population_size', type=int, default=config.POPULATION_SIZE)
-    parser.add_argument('--max_gen', type=int, default=config.MAX_GEN)
     
     # Dataset params
     parser.add_argument('--dataset', type=str, default=config.FINAL_DATASET,
@@ -50,12 +43,9 @@ def parse_args():
 def main():
     # Setup logging
     logger.setup_file_logging()
-    tb_logger.setup()
 
     args = parse_args()
     set_seed(args.seed)
-    config.POPULATION_SIZE = args.population_size
-    config.MAX_GEN = args.max_gen
     config.FINAL_DATASET = args.dataset
     
     # Update NTK_NUM_CLASSES based on dataset

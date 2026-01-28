@@ -1,278 +1,304 @@
 # -*- coding: utf-8 -*-
 """
-神经网络架构搜索算法 - 编码模块
-实现变长编码策略
+DARTS Cell 编码模块
+实现基于 DAG 的 Cell 编码策略
 """
 import random
 import copy
 from typing import List, Tuple, Optional
+from dataclasses import dataclass
 from configuration.config import config
 
-# Block参数数量常量（用于编解码）
-BLOCK_PARAM_COUNT = 9
 
-class BlockParams:
+@dataclass
+class Edge:
     """
-    Block参数封装类
-    扩展参数：activation_type, dropout_rate, skip_type, kernel_size
-    """
-    def __init__(self, out_channels: int, groups: int, pool_type: int, 
-                 pool_stride: int, has_senet: int, activation_type: int = 0,
-                 dropout_rate: float = 0.0, skip_type: int = 0, kernel_size: int = 3):
-        self.out_channels = out_channels
-        self.groups = groups
-        self.pool_type = pool_type
-        self.pool_stride = pool_stride
-        self.has_senet = has_senet
-        # 新增参数
-        self.activation_type = activation_type  # 0=ReLU, 1=SiLU, 2=GELU
-        self.dropout_rate = dropout_rate        # Dropout率
-        self.skip_type = skip_type              # 0=add, 1=concat, 2=none
-        self.kernel_size = kernel_size          # 卷积核大小: 3, 5, 7
+    边定义: 来源节点索引 + 操作类型ID
     
-    def to_list(self) -> List:
-        # dropout_rate 使用整数编码 (乘以100存储)
-        dropout_encoded = int(self.dropout_rate * 100)
-        return [self.out_channels, self.groups, self.pool_type, 
-                self.pool_stride, self.has_senet, self.activation_type,
-                dropout_encoded, self.skip_type, self.kernel_size]
+    source: 来源节点索引
+        - 0: Input_0 (c_{k-2})
+        - 1: Input_1 (c_{k-1})
+        - 2+: 中间节点 Node_0, Node_1, ...
+    op_id: 操作 ID (0-7)
+    """
+    source: int
+    op_id: int
+    
+    def to_list(self) -> List[int]:
+        return [self.source, self.op_id]
     
     @classmethod
-    def from_list(cls, params: List) -> 'BlockParams':
-        # 兼容旧版5参数编码
-        if len(params) == 5:
-            return cls(params[0], params[1], params[2], params[3], params[4])
-        # 新版9参数编码
-        dropout_rate = params[6] / 100.0  # 解码dropout率
-        return cls(params[0], params[1], params[2], params[3], params[4],
-                   params[5], dropout_rate, params[7], params[8])
+    def from_list(cls, data: List[int]) -> 'Edge':
+        return cls(source=data[0], op_id=data[1])
+    
+    def copy(self) -> 'Edge':
+        return Edge(source=self.source, op_id=self.op_id)
+
+
+class CellEncoding:
+    """
+    Cell 编码类
+    
+    一个 Cell 是一个 DAG，包含:
+    - 2 个输入节点 (Input_0, Input_1)
+    - N 个中间节点 (Node_0, ..., Node_{N-1})
+    - 1 个输出节点 (所有中间节点的 concat)
+    
+    每个中间节点有 K 条输入边，每条边定义:
+    - 来源节点索引
+    - 操作类型 ID
+    
+    编码格式: [source_0, op_0, source_1, op_1, ...]
+    编码长度: N * K * 2
+    """
+    
+    def __init__(self, edges: List[List[Edge]] = None):
+        """
+        Args:
+            edges: edges[node_idx] = [edge_0, edge_1, ...], 每个节点的输入边列表
+        """
+        self.num_nodes = config.NUM_NODES
+        self.edges_per_node = config.EDGES_PER_NODE
+        
+        if edges is not None:
+            self.edges = edges
+        else:
+            self.edges = self._random_edges()
+    
+    def _random_edges(self) -> List[List[Edge]]:
+        """随机生成所有边"""
+        edges = []
+        num_ops = len(config.OPERATIONS)
+        
+        for node_idx in range(self.num_nodes):
+            # 可选来源: Input_0, Input_1, Node_0, ..., Node_{node_idx-1}
+            valid_sources = list(range(2 + node_idx))
+            node_edges = []
+            
+            for _ in range(self.edges_per_node):
+                source = random.choice(valid_sources)
+                op_id = random.randint(0, num_ops - 1)
+                node_edges.append(Edge(source=source, op_id=op_id))
+            
+            edges.append(node_edges)
+        
+        return edges
+    
+    def to_list(self) -> List[int]:
+        """转换为整数列表"""
+        result = []
+        for node_edges in self.edges:
+            for edge in node_edges:
+                result.extend(edge.to_list())
+        return result
+    
+    @classmethod
+    def from_list(cls, encoding: List[int]) -> 'CellEncoding':
+        """从整数列表解码"""
+        num_nodes = config.NUM_NODES
+        edges_per_node = config.EDGES_PER_NODE
+        expected_length = num_nodes * edges_per_node * 2
+        
+        if len(encoding) != expected_length:
+            raise ValueError(f"Expected encoding length {expected_length}, got {len(encoding)}")
+        
+        edges = []
+        idx = 0
+        
+        for node_idx in range(num_nodes):
+            node_edges = []
+            for _ in range(edges_per_node):
+                edge_data = encoding[idx:idx+2]
+                node_edges.append(Edge.from_list(edge_data))
+                idx += 2
+            edges.append(node_edges)
+        
+        cell = cls.__new__(cls)
+        cell.num_nodes = num_nodes
+        cell.edges_per_node = edges_per_node
+        cell.edges = edges
+        return cell
+    
+    def copy(self) -> 'CellEncoding':
+        """深拷贝"""
+        new_edges = []
+        for node_edges in self.edges:
+            new_edges.append([edge.copy() for edge in node_edges])
+        
+        cell = CellEncoding.__new__(CellEncoding)
+        cell.num_nodes = self.num_nodes
+        cell.edges_per_node = self.edges_per_node
+        cell.edges = new_edges
+        return cell
+    
+    def validate(self) -> bool:
+        """验证编码有效性"""
+        num_ops = len(config.OPERATIONS)
+        
+        for node_idx, node_edges in enumerate(self.edges):
+            if len(node_edges) != self.edges_per_node:
+                return False
+            
+            valid_sources = list(range(2 + node_idx))
+            
+            for edge in node_edges:
+                if edge.source not in valid_sources:
+                    return False
+                if edge.op_id < 0 or edge.op_id >= num_ops:
+                    return False
+        
+        return True
+    
+    def get_edge(self, node_idx: int, edge_idx: int) -> Edge:
+        """获取指定边"""
+        return self.edges[node_idx][edge_idx]
+    
+    def set_edge(self, node_idx: int, edge_idx: int, edge: Edge):
+        """设置指定边"""
+        self.edges[node_idx][edge_idx] = edge
+    
+    def get_valid_sources(self, node_idx: int) -> List[int]:
+        """获取指定节点的有效输入来源"""
+        return list(range(2 + node_idx))
     
     def __repr__(self):
-        activation_names = {0: 'ReLU', 1: 'SiLU', 2: 'GELU'}
-        skip_names = {0: 'add', 1: 'concat', 2: 'none'}
-        return (f"BlockParams(out_ch={self.out_channels}, groups={self.groups}, "
-                f"pool_type={self.pool_type}, pool_stride={self.pool_stride}, "
-                f"has_senet={self.has_senet}, activation={activation_names.get(self.activation_type, 'ReLU')}, "
-                f"dropout={self.dropout_rate}, skip={skip_names.get(self.skip_type, 'add')}, "
-                f"kernel_size={self.kernel_size})")
+        lines = [f"CellEncoding(num_nodes={self.num_nodes}, edges_per_node={self.edges_per_node}):"]
+        for node_idx, node_edges in enumerate(self.edges):
+            edge_strs = []
+            for edge in node_edges:
+                op_name = config.OPERATIONS[edge.op_id] if edge.op_id < len(config.OPERATIONS) else f"op_{edge.op_id}"
+                source_name = f"Input_{edge.source}" if edge.source < 2 else f"Node_{edge.source - 2}"
+                edge_strs.append(f"{source_name}→{op_name}")
+            lines.append(f"  Node_{node_idx}: {', '.join(edge_strs)}")
+        return "\n".join(lines)
+    
+    @staticmethod
+    def encoding_length() -> int:
+        """返回单个 Cell 编码长度"""
+        return config.NUM_NODES * config.EDGES_PER_NODE * 2
+
 
 class Individual:
     """
     个体类，表示一个网络架构候选解
+    
+    包含:
+    - normal_cell: Normal Cell 编码
+    - reduction_cell: Reduction Cell 编码
     """
-    def __init__(self, encoding: Optional[List[int]] = None):
-        self.id = None       
-        self.encoding = encoding if encoding is not None else []
-        self.quick_score=0
+    _id_counter = 0
+    
+    def __init__(self, normal_cell: CellEncoding = None, reduction_cell: CellEncoding = None):
+        Individual._id_counter += 1
+        self.id = Individual._id_counter
+        
+        self.normal_cell = normal_cell if normal_cell is not None else CellEncoding()
+        self.reduction_cell = reduction_cell if reduction_cell is not None else CellEncoding()
+        
         # 评估属性
         self.fitness = None
-        
+        self.param_count = None
+        self.accuracy = None
+    
     def copy(self) -> 'Individual':
-        new_ind = Individual(copy.deepcopy(self.encoding))
+        """深拷贝个体"""
+        new_ind = Individual(
+            normal_cell=self.normal_cell.copy(),
+            reduction_cell=self.reduction_cell.copy()
+        )
         new_ind.fitness = self.fitness
+        new_ind.param_count = self.param_count
+        new_ind.accuracy = self.accuracy
         return new_ind
     
+    @classmethod
+    def update_id_counter(cls, max_id: int):
+        """更新 ID 计数器，确保新个体 ID 不与已有个体冲突"""
+        if max_id >= cls._id_counter:
+            cls._id_counter = max_id + 1
+    
+    def to_dict(self) -> dict:
+        """转换为字典格式 (用于序列化)"""
+        return {
+            'id': self.id,
+            'normal_cell': self.normal_cell.to_list(),
+            'reduction_cell': self.reduction_cell.to_list(),
+            'fitness': self.fitness,
+            'param_count': self.param_count,
+            'accuracy': self.accuracy
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Individual':
+        """从字典格式创建个体"""
+        ind = cls(
+            normal_cell=CellEncoding.from_list(data['normal_cell']),
+            reduction_cell=CellEncoding.from_list(data['reduction_cell'])
+        )
+        ind.id = data.get('id', ind.id)
+        ind.fitness = data.get('fitness')
+        ind.param_count = data.get('param_count')
+        ind.accuracy = data.get('accuracy')
+        return ind
+    
+    def validate(self) -> bool:
+        """验证个体有效性"""
+        return self.normal_cell.validate() and self.reduction_cell.validate()
+    
     def __repr__(self):
-        return f"Individual(id={self.id}, fitness={self.fitness}, encoding_len={len(self.encoding)})"
+        return (f"Individual(id={self.id}, fitness={self.fitness}, "
+                f"params={self.param_count}, acc={self.accuracy})")
+
 
 class Encoder:
     """
-    编码器类
+    编码器工具类
+    提供静态方法用于编码操作
     """
-    @staticmethod
-    def random_block_params() -> BlockParams:
-        out_channels = random.choice(config.CHANNEL_OPTIONS)
-        # 确保 groups <= out_channels 且 out_channels % groups == 0
-        valid_groups = [g for g in config.GROUP_OPTIONS if g <= out_channels and out_channels % g == 0]
-        groups = random.choice(valid_groups) if valid_groups else 1
-        pool_type = random.choice(config.POOL_TYPE_OPTIONS)
-        pool_stride = random.choice(config.POOL_STRIDE_OPTIONS)
-        has_senet = random.choice(config.SENET_OPTIONS)
-        # 新增参数
-        activation_type = random.choice(config.ACTIVATION_OPTIONS)
-        dropout_rate = random.choice(config.DROPOUT_OPTIONS)
-        skip_type = random.choice(config.SKIP_TYPE_OPTIONS)
-        kernel_size = random.choice(config.KERNEL_SIZE_OPTIONS)
-        
-        return BlockParams(out_channels, groups, pool_type, pool_stride, has_senet,
-                           activation_type, dropout_rate, skip_type, kernel_size)
     
     @staticmethod
-    def create_random_encoding() -> List[int]:
-        unit_num = random.randint(config.MIN_UNIT_NUM, config.MAX_UNIT_NUM)
-        encoding = [unit_num]
-        
-        block_nums = []
-        for _ in range(unit_num):
-            block_num = random.randint(config.MIN_BLOCK_NUM, config.MAX_BLOCK_NUM)
-            block_nums.append(block_num)
-            encoding.append(block_num)
-        
-        for block_num in block_nums:
-            for _ in range(block_num):
-                block_params = Encoder.random_block_params()
-                encoding.extend(block_params.to_list())
-        
-        return encoding
+    def create_random_individual() -> Individual:
+        """创建随机个体"""
+        return Individual()
     
     @staticmethod
-    def decode(encoding: List[int]) -> Tuple[int, List[int], List[List[BlockParams]]]:
-        if not encoding:
-            raise ValueError("Encoding is empty")
-        
-        unit_num = encoding[0]
-        block_nums = encoding[1:1+unit_num]
-        
-        block_params_list = []
-        idx = 1 + unit_num
-        
-        for block_num in block_nums:
-            unit_blocks = []
-            for _ in range(block_num):
-                params = encoding[idx:idx+BLOCK_PARAM_COUNT]
-                if len(params) < BLOCK_PARAM_COUNT:
-                    raise ValueError(f"Incomplete block params at index {idx}")
-                block_params = BlockParams.from_list(params)
-                unit_blocks.append(block_params)
-                idx += BLOCK_PARAM_COUNT
-            block_params_list.append(unit_blocks)
-        
-        return unit_num, block_nums, block_params_list
+    def validate_individual(individual: Individual) -> bool:
+        """验证个体"""
+        return individual.validate()
     
     @staticmethod
-    def encode(unit_num: int, block_nums: List[int], 
-               block_params_list: List[List[BlockParams]]) -> List[int]:
-        encoding = [unit_num]
-        encoding.extend(block_nums)
-        
-        for unit_blocks in block_params_list:
-            for block_params in unit_blocks:
-                encoding.extend(block_params.to_list())
-        
-        return encoding
-    
-    @staticmethod
-    def validate_encoding(encoding: List[int]) -> bool:
-        try:
-            unit_num, block_nums, block_params_list = Encoder.decode(encoding)
-            
-            if not (config.MIN_UNIT_NUM <= unit_num <= config.MAX_UNIT_NUM):
-                return False
-            
-            for block_num in block_nums:
-                if not (config.MIN_BLOCK_NUM <= block_num <= config.MAX_BLOCK_NUM):
-                    return False
-            
-            for unit_blocks in block_params_list:
-                for bp in unit_blocks:
-                    if bp.out_channels not in config.CHANNEL_OPTIONS: return False
-                    if bp.groups not in config.GROUP_OPTIONS: return False
-                    if bp.groups > bp.out_channels: return False
-                    if bp.out_channels % bp.groups != 0: return False  # 确保能整除
-                    if bp.pool_type not in config.POOL_TYPE_OPTIONS: return False
-                    if bp.pool_stride not in config.POOL_STRIDE_OPTIONS: return False
-                    if bp.has_senet not in config.SENET_OPTIONS: return False
-                    # 新增参数验证
-                    if bp.activation_type not in config.ACTIVATION_OPTIONS: return False
-                    if bp.dropout_rate not in config.DROPOUT_OPTIONS: return False
-                    if bp.skip_type not in config.SKIP_TYPE_OPTIONS: return False
-                    if bp.kernel_size not in config.KERNEL_SIZE_OPTIONS: return False
-            
-            if not Encoder.validate_feature_size(encoding):
-                return False
-            
-            # 验证通道数不会爆炸（特别是 concat 模式）
-            if not Encoder.validate_channel_count(encoding):
-                return False
-            
-            return True
-        except Exception:
-            return False
-
-    @staticmethod
-    def validate_channel_count(encoding: List[int], init_channels: int = None) -> bool:
-        """验证网络通道数不会超过最大限制"""
-        if init_channels is None:
-            init_channels = config.INIT_CONV_OUT_CHANNELS
-        
-        try:
-            _, _, block_params_list = Encoder.decode(encoding)
-            current_channels = init_channels
-            
-            for unit_blocks in block_params_list:
-                for bp in unit_blocks:
-                    out_channels = bp.out_channels * config.EXPANSION
-                    if bp.skip_type == 1:  # concat
-                        final_channels = out_channels + current_channels
-                    else:
-                        final_channels = out_channels
-                    
-                    if final_channels > config.MAX_CHANNELS:
-                        return False
-                    current_channels = final_channels
-            
-            return True
-        except Exception:
-            return False
-
-    @staticmethod
-    def validate_feature_size(encoding: List[int], input_size: int = None) -> bool:
-        if input_size is None:
-            input_size = config.INPUT_IMAGE_SIZE
-        
-        try:
-            _, _, block_params_list = Encoder.decode(encoding)
-            current_size = input_size
-            
-            for unit_blocks in block_params_list:
-                for bp in unit_blocks:
-                    if bp.pool_stride == 2:
-                        current_size = (current_size + 1) // 2
-                    if current_size < config.MIN_FEATURE_SIZE:
-                        return False
-            return current_size >= config.MIN_FEATURE_SIZE
-        except Exception:
-            return False
-            
-    @staticmethod
-    def get_max_downsampling(input_size: int = None) -> int:
-        if input_size is None:
-            input_size = config.INPUT_IMAGE_SIZE
-        import math
-        return int(math.log2(input_size / config.MIN_FEATURE_SIZE))
-
-    @staticmethod
-    def print_architecture(encoding: List[int]):
-        unit_num, block_nums, block_params_list = Encoder.decode(encoding)
-        
-        # 尝试计算参数量
-        param_count_str = "N/A"
-        try:
-            # 延迟导入以避免循环依赖
-            from models.network import NetworkBuilder
-            param_count = NetworkBuilder.calculate_param_count(encoding)
-            param_count_str = f"{param_count:,}"
-        except Exception as e:
-            param_count_str = f"Error calculating params: {e}"
-
+    def print_architecture(individual: Individual):
+        """打印架构信息"""
         print(f"\n{'='*60}")
-        print(f"Network Architecture")
+        print(f"Individual {individual.id}")
         print(f"{'='*60}")
-        print(f"Number of Units: {unit_num}")
-        print(f"Blocks per Unit: {block_nums}")
-        print(f"Total Parameters: {param_count_str}")
-        print(f"{'-'*60}")
-        for i, unit_blocks in enumerate(block_params_list):
-            print(f"\nUnit {i+1} ({len(unit_blocks)} blocks):")
-            for j, bp in enumerate(unit_blocks):
-                pool_type_str = "MaxPool" if bp.pool_type == 0 else "AvgPool"
-                senet_str = "Yes" if bp.has_senet == 1 else "No"
-                activation_names = {0: 'ReLU', 1: 'SiLU', 2: 'GELU'}
-                skip_names = {0: 'add', 1: 'concat', 2: 'none'}
-                activation_str = activation_names.get(bp.activation_type, 'ReLU')
-                skip_str = skip_names.get(bp.skip_type, 'add')
-                print(f"  Block {j+1}: out_ch={bp.out_channels}, groups={bp.groups}, "
-                      f"pool={pool_type_str}, stride={bp.pool_stride}, SENet={senet_str}, "
-                      f"act={activation_str}, dropout={bp.dropout_rate}, skip={skip_str}, "
-                      f"kernel={bp.kernel_size}")
+        print(f"Fitness: {individual.fitness}")
+        print(f"Param Count: {individual.param_count}")
+        print(f"Accuracy: {individual.accuracy}")
+        print(f"\n--- Normal Cell ---")
+        print(individual.normal_cell)
+        print(f"\n--- Reduction Cell ---")
+        print(individual.reduction_cell)
         print(f"\n{'='*60}\n")
+    
+    @staticmethod
+    def get_genotype(individual: Individual) -> dict:
+        """
+        获取基因型 (用于与 DARTS 论文对比)
+        
+        返回格式与 DARTS 原始代码兼容的基因型表示
+        """
+        def cell_to_genotype(cell: CellEncoding) -> List[Tuple[str, int]]:
+            genotype = []
+            for node_idx, node_edges in enumerate(cell.edges):
+                for edge in node_edges:
+                    op_name = config.OPERATIONS[edge.op_id]
+                    genotype.append((op_name, edge.source))
+            return genotype
+        
+        return {
+            'normal': cell_to_genotype(individual.normal_cell),
+            'normal_concat': list(range(2, 2 + config.NUM_NODES)),
+            'reduce': cell_to_genotype(individual.reduction_cell),
+            'reduce_concat': list(range(2, 2 + config.NUM_NODES))
+        }

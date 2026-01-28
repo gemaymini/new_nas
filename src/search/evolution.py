@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Aging Evolution (Regularized Evolution) Algorithm Implementation
+DARTS-based Aging Evolution Algorithm Implementation
 """
 import random
 import os
@@ -14,16 +14,17 @@ from typing import List, Tuple, Optional
 from copy import deepcopy
 
 from configuration.config import config
-from core.encoding import Encoder, Individual
-from core.search_space import population_initializer
+from core.encoding import Individual, Encoder
+from core.search_space import population_initializer, search_space
 from search.mutation import mutation_operator, selection_operator, crossover_operator
 from engine.evaluator import fitness_evaluator, FinalEvaluator
-from utils.logger import logger, tb_logger, failed_logger
+from utils.logger import logger, failed_logger
+
 
 class AgingEvolutionNAS:
     def __init__(self):
         self.population_size = config.POPULATION_SIZE
-        self.max_gen = config.MAX_GEN # Total individuals to evaluate
+        self.max_gen = config.MAX_GEN  # Total individuals to evaluate
         
         # 1. Population & History Management
         # Using deque for FIFO queue (fixed size handled by manual popleft)
@@ -32,8 +33,8 @@ class AgingEvolutionNAS:
         self.lock = threading.Lock()
         
         # NTK历史记录，用于绘制NTK曲线
-        # 格式: [(step, individual_id, ntk_value, encoding), ...]
-        self.ntk_history: List[Tuple[int, int, float, list]] = []
+        # 格式: [(step, individual_id, ntk_value, genotype), ...]
+        self.ntk_history: List[Tuple[int, int, float, dict]] = []
         
         self.start_time = time.time()
         
@@ -57,15 +58,20 @@ class AgingEvolutionNAS:
         
         while len(self.population) < self.population_size:
             ind = population_initializer.create_valid_individual()
+            if ind is None:
+                logger.warning("Failed to create individual, using fallback")
+                ind = search_space.sample_individual()
+            
             # Evaluate immediately
-            ind.id=len(self.population)
+            ind.id = len(self.population)
             fitness_evaluator.evaluate_individual(ind)
             self.population.append(ind)
             self.history.append(ind)
             
-            # 记录NTK值
+            # 记录NTK值 (保存genotype而非encoding)
             step = 0  # 初始化阶段step=0
-            self.ntk_history.append((step, ind.id, ind.fitness, ind.encoding.copy()))
+            genotype = Encoder.get_genotype(ind)
+            self.ntk_history.append((step, ind.id, ind.fitness, genotype))
             
             if len(self.population) % 10 == 0:
                 logger.info(f"Initialized {len(self.population)}/{self.population_size} individuals")
@@ -104,9 +110,7 @@ class AgingEvolutionNAS:
         
         # Crossover
         if random.random() < config.PROB_CROSSOVER:
-            # Generate 2 children, pick random one
-            c1, c2 = crossover_operator.crossover(parent1, parent2)
-            child = random.choice([c1, c2])
+            child = crossover_operator.crossover(parent1, parent2)
         else:
             child = random.choice([parent1, parent2]).copy()
 
@@ -115,15 +119,17 @@ class AgingEvolutionNAS:
             child = mutation_operator.mutate(child)
             
         # Validate and Repair
-        if not Encoder.validate_encoding(child.encoding):
+        if not child.validate():
             child = self._repair_individual(child, [parent1, parent2])
             
         return child
 
     def _repair_individual(self, ind: Individual, parents: List[Individual]) -> Individual:
+        """Repair invalid individual by re-mutating from parents"""
         for _ in range(20):
             ind = mutation_operator.mutate(random.choice(parents))
-            if Encoder.validate_encoding(ind.encoding): return ind
+            if ind.validate():
+                return ind
         return random.choice(parents).copy()
 
     def step(self):
@@ -149,7 +155,8 @@ class AgingEvolutionNAS:
         current_step = len(self.history) - len(self.population) + 1
         
         # 记录NTK值
-        self.ntk_history.append((current_step, child.id, child.fitness, child.encoding.copy()))
+        genotype = Encoder.get_genotype(child)
+        self.ntk_history.append((current_step, child.id, child.fitness, genotype))
         
         # 4. Atomic Update
         with self.lock:
@@ -180,9 +187,6 @@ class AgingEvolutionNAS:
             self.initialize_population()
             
         # Continue until we have generated MAX_GEN individuals (including initial pop)
-        # Or just run MAX_GEN steps? Usually MAX_GEN implies total evaluations.
-        # Let's say we run until len(history) >= MAX_GEN
-        
         while len(self.history) - len(self.population) < self.max_gen:
             self.step()
             
@@ -205,16 +209,19 @@ class AgingEvolutionNAS:
         logger.info("Starting Screening and Training Phase...")
         
         # 1. History Screening (Top N1 by NTK)
-        # Deduplicate history first based on encoding
+        # Deduplicate history first based on genotype
         unique_history = {}
         for ind in self.history:
-            enc_tuple = tuple(ind.encoding)
-            if enc_tuple not in unique_history:
-                unique_history[enc_tuple] = ind
+            # Use genotype as key for deduplication
+            genotype = Encoder.get_genotype(ind)
+            key = (tuple(genotype['normal']), tuple(genotype['reduce']))
+            
+            if key not in unique_history:
+                unique_history[key] = ind
             else:
                 # fitness 越小越好，保留更小的
-                if ind.fitness is not None and (unique_history[enc_tuple].fitness is None or ind.fitness < unique_history[enc_tuple].fitness):
-                    unique_history[enc_tuple] = ind
+                if ind.fitness is not None and (unique_history[key].fitness is None or ind.fitness < unique_history[key].fitness):
+                    unique_history[key] = ind
         
         candidates = list(unique_history.values())
         # fitness 越小越好，升序排列
@@ -227,19 +234,13 @@ class AgingEvolutionNAS:
         logger.info(f"Starting Short Training ({config.SHORT_TRAIN_EPOCHS} epochs) for Top {config.HISTORY_TOP_N1}...")
         short_train_start_time = time.time()
         
-        # We use FinalEvaluator but with fewer epochs
-        # Note: FinalEvaluator usually saves models. We might want to disable saving for short train or overwrite.
-        # Let's use a temporary evaluator or just FinalEvaluator.
-        
         evaluator = FinalEvaluator(dataset=config.FINAL_DATASET)
         
         short_results = []
         for i, ind in enumerate(top_n1):
             logger.info(f"Short Train [{i+1}/{len(top_n1)}] ID: {ind.id}")
-            # Use 'quick_score' to store val acc from short training to avoid overwriting 'fitness' (NTK)
-            # But FinalEvaluator returns best_acc.
             acc, _ = evaluator.evaluate_individual(ind, epochs=config.SHORT_TRAIN_EPOCHS)
-            ind.quick_score = acc # Store for sorting
+            ind.accuracy = acc  # Store for sorting
             short_results.append(ind)
         
         # 记录短轮次训练时间
@@ -247,7 +248,7 @@ class AgingEvolutionNAS:
         logger.info(f"Short Training completed. Time: {self._format_time(self.short_train_time)}")
             
         # 3. Select Top N2 (by Val Acc)
-        short_results.sort(key=lambda x: x.quick_score if x.quick_score else float('-inf'), reverse=True)
+        short_results.sort(key=lambda x: x.accuracy if x.accuracy else float('-inf'), reverse=True)
         top_n2 = short_results[:config.HISTORY_TOP_N2]
         logger.info(f"Selected Top {config.HISTORY_TOP_N2} candidates based on Short Training Accuracy.")
         
@@ -297,36 +298,32 @@ class AgingEvolutionNAS:
             avg_fitness = best_fitness = 0.0
             
         stats = {
-            'generation': len(self.history)-len(self.population),
+            'generation': len(self.history) - len(self.population),
             'best_fitness': best_fitness,
             'avg_fitness': avg_fitness,
             'population_size': len(self.population)
         }
         
-        # Use existing logger methods (might need adaptation)
-        logger.log_generation(len(self.history)-len(self.population), best_fitness, avg_fitness, len(self.population))
-        tb_logger.log_generation_stats(len(self.history)-len(self.population), stats)
-        
-        # Unit stats
-        unit_counts = {}
-        for ind in self.population:
-            if ind.encoding:
-                unit_num = ind.encoding[0]
-                unit_counts[unit_num] = unit_counts.get(unit_num, 0) + 1
-        logger.log_unit_stats(len(self.history)-len(self.population), unit_counts)
+        # Use existing logger methods
+        logger.log_generation(len(self.history) - len(self.population), best_fitness, avg_fitness, len(self.population))
 
     def save_checkpoint(self, filepath: str = None):
         if filepath is None:
-            if not os.path.exists(config.CHECKPOINT_DIR): os.makedirs(config.CHECKPOINT_DIR)
+            if not os.path.exists(config.CHECKPOINT_DIR):
+                os.makedirs(config.CHECKPOINT_DIR)
             filepath = os.path.join(config.CHECKPOINT_DIR, f'checkpoint_step{len(self.history)-len(self.population)}.pkl')
         
+        # 将 Individual 转换为可序列化格式
+        population_data = [ind.to_dict() for ind in self.population]
+        history_data = [ind.to_dict() for ind in self.history]
+        
         checkpoint = {
-            'population': list(self.population), # Convert deque to list for pickling
-            'history': self.history,
-            'ntk_history': self.ntk_history,  # 保存NTK历史
-            'search_time': self.search_time,  # 搜索时间
-            'short_train_time': self.short_train_time,  # 短轮次训练时间
-            'full_train_time': self.full_train_time,  # 完整训练时间
+            'population': population_data,
+            'history': history_data,
+            'ntk_history': self.ntk_history,
+            'search_time': self.search_time,
+            'short_train_time': self.short_train_time,
+            'full_train_time': self.full_train_time,
         }
         with open(filepath, 'wb') as f:
             pickle.dump(checkpoint, f)
@@ -335,14 +332,32 @@ class AgingEvolutionNAS:
     def load_checkpoint(self, filepath: str):
         with open(filepath, 'rb') as f:
             checkpoint = pickle.load(f)
-        self.population = deque(checkpoint['population'])
-        self.history = checkpoint['history']
+        
+        # 从序列化格式恢复 Individual
+        population_data = checkpoint.get('population', [])
+        history_data = checkpoint.get('history', [])
+        
+        # 兼容旧格式 (直接存储 Individual 对象)
+        if population_data and isinstance(population_data[0], dict):
+            self.population = deque([Individual.from_dict(d) for d in population_data])
+            self.history = [Individual.from_dict(d) for d in history_data]
+        else:
+            # 旧格式兼容
+            self.population = deque(population_data)
+            self.history = history_data
+        
         # 加载NTK历史（兼容旧checkpoint）
         self.ntk_history = checkpoint.get('ntk_history', [])
         # 加载时间统计（兼容旧checkpoint）
         self.search_time = checkpoint.get('search_time', 0.0)
         self.short_train_time = checkpoint.get('short_train_time', 0.0)
         self.full_train_time = checkpoint.get('full_train_time', 0.0)
+        
+        # 更新 Individual ID 计数器，避免 ID 冲突
+        if self.history:
+            max_id = max(ind.id for ind in self.history)
+            Individual.update_id_counter(max_id)
+            
         logger.info(f"Checkpoint loaded from {filepath}")
     
     def _save_ntk_history(self, filepath: str = None):
@@ -359,25 +374,29 @@ class AgingEvolutionNAS:
         
         # 转换为可序列化格式
         data = []
-        for step, ind_id, ntk_value, encoding in self.ntk_history:
-            data.append({
+        for step, ind_id, ntk_value, genotype in self.ntk_history:
+            item = {
                 'step': step,
                 'individual_id': ind_id,
                 'ntk': ntk_value if ntk_value is not None else None,
-                'encoding': encoding
-            })
+            }
+            # 处理 genotype（可能是 dict 或旧格式的 list）
+            if isinstance(genotype, dict):
+                item['genotype'] = {
+                    'normal': genotype.get('normal', []),
+                    'reduce': genotype.get('reduce', [])
+                }
+            else:
+                item['encoding'] = genotype  # 旧格式兼容
+            data.append(item)
         
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
         logger.info(f"NTK history saved to {filepath}")
     
     def plot_ntk_curve(self, output_path: str = None):
         """
         绘制搜索过程中NTK值的变化曲线
-        包括：
-        1. 所有个体的NTK散点图
-        2. 滑动窗口平均NTK曲线
-        3. 当前种群最佳NTK曲线
         """
         if not self.ntk_history:
             logger.warning("No NTK history to plot!")
@@ -391,7 +410,7 @@ class AgingEvolutionNAS:
         # 提取数据
         steps = []
         ntk_values = []
-        for step, ind_id, ntk, encoding in self.ntk_history:
+        for step, ind_id, ntk, genotype in self.ntk_history:
             if ntk is not None and ntk < 100000:  # 排除无效值
                 steps.append(step)
                 ntk_values.append(ntk)
@@ -413,7 +432,7 @@ class AgingEvolutionNAS:
         
         # 2. 滑动窗口平均NTK曲线
         ax2 = axes[0, 1]
-        window_size = max(10, len(ntk_values) // 50)  # 动态窗口大小
+        window_size = max(10, len(ntk_values) // 50)
         if len(ntk_values) >= window_size:
             moving_avg = []
             for i in range(len(ntk_values) - window_size + 1):
@@ -433,7 +452,7 @@ class AgingEvolutionNAS:
         # 3. 按step分组的最佳NTK曲线
         ax3 = axes[1, 0]
         step_best = {}
-        for step, ind_id, ntk, encoding in self.ntk_history:
+        for step, ind_id, ntk, genotype in self.ntk_history:
             if ntk is not None and ntk < 100000:
                 if step not in step_best or ntk < step_best[step]:
                     step_best[step] = ntk
