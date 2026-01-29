@@ -287,11 +287,21 @@ class FinalEvaluator:
         logger.info(f"Training curve saved to {plot_path}")
         return plot_path
 
-    def evaluate_individual(self, individual: Individual, epochs: int = None) -> Tuple[float, dict]:
+    def evaluate_individual(self, individual: Individual, epochs: int = None, train_type: str = 'full') -> Tuple[float, dict]:
+        """评估单个个体
+        
+        Args:
+            individual: 待评估的个体
+            epochs: 训练轮数
+            train_type: 训练类型，'short' 表示短期训练，'full' 表示完整训练
+        
+        Returns:
+            (best_acc, result) 元组
+        """
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
 
-        logger.info(f"Training individual {individual.id} for {epochs} epochs...")
+        logger.info(f"Training individual {individual.id} for {epochs} epochs ({train_type} training)...")
         network = NetworkBuilder.build_from_individual(
             individual, num_classes=self.num_classes
         )
@@ -304,8 +314,12 @@ class FinalEvaluator:
         )
         train_time = time.time() - start_time
 
-        # 保存模型
-        save_dir = os.path.join(config.CHECKPOINT_DIR, 'final_models')
+        # 根据训练类型保存到不同目录
+        if train_type == 'short':
+            model_dir = 'short_train_models'
+        else:
+            model_dir = 'full_train_models'
+        save_dir = os.path.join(config.CHECKPOINT_DIR, model_dir)
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, f'model_{individual.id}_acc{best_acc:.2f}.pth')
 

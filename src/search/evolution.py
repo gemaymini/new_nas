@@ -239,7 +239,7 @@ class AgingEvolutionNAS:
         short_results = []
         for i, ind in enumerate(top_n1):
             logger.info(f"Short Train [{i+1}/{len(top_n1)}] ID: {ind.id}")
-            acc, _ = evaluator.evaluate_individual(ind, epochs=config.SHORT_TRAIN_EPOCHS)
+            acc, _ = evaluator.evaluate_individual(ind, epochs=config.SHORT_TRAIN_EPOCHS, train_type='short')
             ind.accuracy = acc  # Store for sorting
             short_results.append(ind)
         
@@ -262,7 +262,7 @@ class AgingEvolutionNAS:
         
         for i, ind in enumerate(top_n2):
             logger.info(f"Full Train [{i+1}/{len(top_n2)}] ID: {ind.id}")
-            acc, result = evaluator.evaluate_individual(ind, epochs=config.FULL_TRAIN_EPOCHS)
+            acc, result = evaluator.evaluate_individual(ind, epochs=config.FULL_TRAIN_EPOCHS, train_type='full')
             
             # Log result
             logger.info(f"Individual {ind.id} Final Accuracy: {acc:.2f}%")
