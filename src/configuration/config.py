@@ -66,7 +66,11 @@ class Config:
     BATCH_SIZE = 256
     LEARNING_RATE = 0.025             
     MOMENTUM = 0.9                  
-    WEIGHT_DECAY = 3e-4             
+    WEIGHT_DECAY = 3e-4
+    
+    # ==================== 早停参数 ====================
+    EARLY_STOPPING_PATIENCE = 50     # 早停耐心值：连续多少个 epoch 没有改进就停止
+    EARLY_STOPPING_MIN_DELTA = 0.01   # 最小改进阈值：小于此值的改进不算有效改进
     
     # ==================== 最终评估参数 ====================
     FINAL_DATASET = 'cifar10'       

@@ -81,11 +81,33 @@ class NetworkTrainer:
     def train_network(self, model: nn.Module, trainloader: DataLoader,
                      testloader: DataLoader, epochs: int = None,
                      lr: float = None, momentum: float = None,
-                     weight_decay: float = None) -> Tuple[float, List[dict]]:
+                     weight_decay: float = None,
+                     patience: int = None,
+                     min_delta: float = None) -> Tuple[float, List[dict]]:
+        """
+        训练网络
+        
+        Args:
+            model: 要训练的模型
+            trainloader: 训练数据加载器
+            testloader: 测试数据加载器
+            epochs: 最大训练轮数
+            lr: 学习率
+            momentum: 动量
+            weight_decay: 权重衰减
+            patience: 早停耐心值，连续多少个 epoch 没有改进就停止训练
+            min_delta: 最小改进阈值，小于此值的改进不算有效改进
+            
+        Returns:
+            best_acc: 最佳测试准确率
+            history: 训练历史记录
+        """
         if epochs is None: epochs = config.FULL_TRAIN_EPOCHS
         if lr is None: lr = config.LEARNING_RATE
         if momentum is None: momentum = config.MOMENTUM
         if weight_decay is None: weight_decay = config.WEIGHT_DECAY
+        if patience is None: patience = config.EARLY_STOPPING_PATIENCE
+        if min_delta is None: min_delta = config.EARLY_STOPPING_MIN_DELTA
         
         # Clear cache before training
         if self.device == 'cuda':
@@ -100,6 +122,7 @@ class NetworkTrainer:
         history = []
         best_acc = 0.0
         best_model_wts = copy.deepcopy(model.state_dict())
+        epochs_without_improvement = 0  # 早停计数器
         
         try:
             for epoch in range(1, epochs + 1):
@@ -118,12 +141,23 @@ class NetworkTrainer:
                     'lr': optimizer.param_groups[0]['lr']
                 })
                 
-                if test_acc > best_acc:
+                # 检查是否有有效改进
+                if test_acc > best_acc + min_delta:
                     best_acc = test_acc
                     best_model_wts = copy.deepcopy(model.state_dict())
+                    epochs_without_improvement = 0  # 重置计数器
+                else:
+                    epochs_without_improvement += 1
                 
                 print(f'  [Epoch {epoch}/{epochs}] Train Acc: {train_acc:.2f}% | '
-                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%')
+                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}% | '
+                      f'No Improve: {epochs_without_improvement}/{patience}')
+                
+                # 早停检查
+                if patience > 0 and epochs_without_improvement >= patience:
+                    logger.info(f"Early stopping triggered at epoch {epoch}. "
+                               f"Best accuracy: {best_acc:.2f}%")
+                    break
                       
         except RuntimeError as e:
             if 'out of memory' in str(e):
