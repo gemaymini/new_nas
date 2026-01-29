@@ -38,3 +38,5 @@ Thumbs.db
 /src/apply/experiment_results
 /src/apply/ntk_experiment_results
 .vs
+/visualizations
+*/visualizations

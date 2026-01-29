@@ -278,7 +278,8 @@ class FinalEvaluator:
             raise ValueError(f"Unknown dataset: {dataset}")
 
     def plot_training_history(self, history: list, individual_id: int, epochs: int, 
-                               best_acc: float, param_count: int, save_dir: str):
+                               best_acc: float, param_count: int, save_dir: str,
+                               model_type: str = 'full'):
         """
         绘制并保存训练曲线图
         
@@ -303,7 +304,8 @@ class FinalEvaluator:
         
         # 创建图表
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        fig.suptitle(f'Training History - Model {individual_id}\n'
+        training_type_label = 'Short-Term Training' if model_type == 'short' else 'Full Training'
+        fig.suptitle(f'{training_type_label} - Model {individual_id}\n'
                      f'Params: {param_count:,} | Best Test Acc: {best_acc:.2f}% | Epochs: {epochs}', 
                      fontsize=14, fontweight='bold')
         
@@ -352,7 +354,7 @@ class FinalEvaluator:
         
         # 保存图表
         os.makedirs(save_dir, exist_ok=True)
-        plot_path = os.path.join(save_dir, f'training_curve_model_{individual_id}.png')
+        plot_path = os.path.join(save_dir, f'training_curve_{model_type}_model_{individual_id}.png')
         plt.savefig(plot_path, dpi=150, bbox_inches='tight')
         plt.close(fig)
         
@@ -407,8 +409,11 @@ class FinalEvaluator:
         logger.info(f"Saved model to {save_path}")
         logger.info(f"Model {individual.id} Genotype: {genotype}")
         
-        # 生成并保存训练曲线图到 logs 目录
-        plot_dir = os.path.join(config.LOG_DIR, 'training_curves')
+        # 生成并保存训练曲线图到 logs 目录，根据 model_type 分开存放
+        if model_type == 'short':
+            plot_dir = os.path.join(config.LOG_DIR, 'training_curves', 'short_training')
+        else:
+            plot_dir = os.path.join(config.LOG_DIR, 'training_curves', 'full_training')
         try:
             plot_path = self.plot_training_history(
                 history=history,
@@ -416,7 +421,8 @@ class FinalEvaluator:
                 epochs=epochs,
                 best_acc=best_acc,
                 param_count=param_count,
-                save_dir=plot_dir
+                save_dir=plot_dir,
+                model_type=model_type
             )
         except Exception as e:
             logger.warning(f"Failed to generate training curve plot: {e}")

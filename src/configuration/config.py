@@ -33,8 +33,8 @@ class Config:
     NUM_STAGES = 3                   # Stage 数量 (3 个 stage = 2 个 reduction)
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 10            # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 500                   # 最大进化代数
+    POPULATION_SIZE = 500            # 种群大小 (Aging Evolution Queue Size)
+    MAX_GEN = 5000                   # 最大进化代数
     TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
     
@@ -43,7 +43,7 @@ class Config:
     SHORT_TRAIN_EPOCHS = 30          # 第一轮筛选：短期训练轮数
     
     HISTORY_TOP_N2 = 5               # 第二轮筛选：基于验证集Acc选择Top N2
-    FULL_TRAIN_EPOCHS = 500          # 最终训练：完整训练轮数
+    FULL_TRAIN_EPOCHS = 600          # 最终训练：完整训练轮数
     
     # ==================== 交叉/变异参数 ====================
     PROB_CROSSOVER = 0.5             # 交叉概率
@@ -69,7 +69,7 @@ class Config:
     WEIGHT_DECAY = 3e-4
     
     # ==================== 早停参数 ====================
-    EARLY_STOPPING_PATIENCE = 50     # 早停耐心值：连续多少个 epoch 没有改进就停止
+    EARLY_STOPPING_PATIENCE = 75     # 早停耐心值：连续多少个 epoch 没有改进就停止
     EARLY_STOPPING_MIN_DELTA = 0.01   # 最小改进阈值：小于此值的改进不算有效改进
     
     # ==================== 最终评估参数 ====================
