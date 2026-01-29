@@ -27,7 +27,7 @@ class NTKEvaluator:
                  batch_size: int = None,
                  device: str = None,
                  recalbn: int = 0,
-                 num_batch: int = 1):
+                 num_batch: int = 5):
         self.input_size = input_size or config.NTK_INPUT_SIZE
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
@@ -107,10 +107,17 @@ class NTKEvaluator:
                     grad = []
                     for name, W in net.named_parameters():
                         if 'weight' in name and W.grad is not None:
-                            grad.append(W.grad.view(-1).detach())
-                    grads[net_idx].append(torch.cat(grad, -1))
+                            grad.append(W.grad.view(-1).detach().clone())  # 添加 clone() 防止梯度被覆盖
+                    if grad:
+                        grads[net_idx].append(torch.cat(grad, -1))
                     net.zero_grad()
-                    torch.cuda.empty_cache()
+            # 将 empty_cache 移到 batch 外层，避免频繁调用影响性能
+            torch.cuda.empty_cache()
+
+        # 检查是否有有效的梯度
+        if len(grads[0]) == 0:
+            logger.warning("No valid gradients collected, returning penalty score.")
+            return 100000.0
 
         grads = [torch.stack(_grads, 0) for _grads in grads]
         ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
@@ -147,9 +154,40 @@ class NTKEvaluator:
                 
         return conds[0]
 
-    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 1) -> float:
+    def _kaiming_init(self, network: nn.Module):
+        """
+        使用 Kaiming Normal Initialization 重新初始化网络参数。
+        
+        对于卷积层和全连接层使用 kaiming_normal_，对于 BatchNorm 层重置为默认值。
+        """
+        for m in network.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm2d):
+                if m.weight is not None:
+                    nn.init.ones_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+                # 重置 running mean 和 var
+                if m.running_mean is not None:
+                    m.running_mean.zero_()
+                if m.running_var is not None:
+                    m.running_var.fill_(1)
+                if hasattr(m, 'num_batches_tracked') and m.num_batches_tracked is not None:
+                    m.num_batches_tracked.zero_()
+
+    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
         """
         Compute NTK score by averaging multiple runs (removing min/max if num_runs > 2).
+        
+        每次运行前使用 Kaiming Normal Initialization 重新初始化网络参数，
+        以获取更具代表性的 NTK 条件数估计。
         
         Args:
             network (nn.Module): The model.
@@ -171,6 +209,9 @@ class NTKEvaluator:
 
             cond_scores = []
             for _ in range(num_runs):
+                # 使用 Kaiming Normal Initialization 重新初始化参数
+                self._kaiming_init(network)
+                
                 score = self.compute_ntk_condition_number(
                     network,
                     self.trainloader,

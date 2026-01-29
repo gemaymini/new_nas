@@ -3,7 +3,7 @@
 DARTS-based 神经网络架构搜索算法 - 配置文件
 包含所有超参数配置
 """
-
+import random
 
 
 class Config:
@@ -33,8 +33,8 @@ class Config:
     NUM_STAGES = 3                   # Stage 数量 (3 个 stage = 2 个 reduction)
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 100            # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 5000                   # 最大进化代数
+    POPULATION_SIZE = 10            # 种群大小 (Aging Evolution Queue Size)
+    MAX_GEN = 500                   # 最大进化代数
     TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
     
@@ -55,18 +55,18 @@ class Config:
     PROB_MUTATE_OPERATION = 0.5      # 边操作变异 vs 边来源变异
     
     # ==================== NTK评估配置 ====================
-    NTK_BATCH_SIZE = 64              
+    NTK_BATCH_SIZE = 32              
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
     NTK_PARAM_THRESHOLD = 10000000   # 参数量阈值
-    NTK_CELLS_PER_STAGE = 2          # NTK评估时使用的每个Stage的Cell数 (减少深度以避免随机权重的梯度消失)
+    NTK_CELLS_PER_STAGE = 3          # NTK评估时使用的每个Stage的Cell数 (减少深度以避免随机权重的梯度消失)
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
     BATCH_SIZE = 256
-    LEARNING_RATE = 0.1             
+    LEARNING_RATE = 0.025             
     MOMENTUM = 0.9                  
-    WEIGHT_DECAY = 5e-4             
+    WEIGHT_DECAY = 3e-4             
     
     # ==================== 最终评估参数 ====================
     FINAL_DATASET = 'cifar10'       
@@ -87,7 +87,7 @@ class Config:
     INPUT_IMAGE_SIZE = 32
     
     # ==================== 其他参数 ====================
-    RANDOM_SEED = 1212312                # 固定默认种子，可通过命令行参数覆盖
+    RANDOM_SEED = random.randint(0, 2*32-1)
     NUM_WORKERS = 8                 
 
     def get_search_space_summary(self) -> str:

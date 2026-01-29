@@ -10,8 +10,6 @@ import random
 import numpy as np
 import warnings
 
-# Suppress the "align=0" VisibleDeprecationWarning from torchvision/numpy 2.4+
-# (Handle case where VisibleDeprecationWarning is removed in Numpy 2.0+)
 if hasattr(np, 'VisibleDeprecationWarning'):
     warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
 
@@ -53,6 +51,7 @@ def main():
 
     args = parse_args()
     set_seed(args.seed)
+    logger.info(f"Random seed: {args.seed}")
     config.FINAL_DATASET = args.dataset
     
     # Update NTK_NUM_CLASSES based on dataset
