@@ -117,16 +117,25 @@ class NTKEvaluator:
         conds = []
         for ntk in ntks:
             try:
+                
                 # Use robust eigenvalue calculation
                 eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
                 
                 # Enforce PSD (Positive Semi-Definite) property by clamping small/negative values to a small epsilon
-                # This handles numerical instability where eigenvalues might be slightly negative (-1e-8)
-                eigenvalues = torch.clamp(eigenvalues, min=1e-6)
+                # 1e-6 was too large for some networks with small gradients (e.g. ~1e-12), causing NTK=1.0
+                eigenvalues = torch.clamp(eigenvalues, min=1e-30)
                 
                 # Check for NaNs
                 if torch.isnan(eigenvalues).any():
                      logger.warning("NaN detected in eigenvalues")
+                     conds.append(100000.0)
+                     continue
+                
+                # Check for Dead Network (Vanishing Gradients)
+                # If the maximum eigenvalue is extremely small, the network has no gradients.
+                # In this case, min~max~1e-30, resulting in cond=1.0, which is misleadingly "perfect".
+                if eigenvalues[-1].item() < 1e-8:
+                     logger.warning(f"Dead network detected (Max Eigenvalue < 1e-8: {eigenvalues[-1].item():.6e}). Penalizing.")
                      conds.append(100000.0)
                      continue
 
@@ -187,6 +196,7 @@ class NTKEvaluator:
             network = NetworkBuilder.build_from_individual(
                 individual,
                 num_classes=self.num_classes,
+                cells_per_stage=config.NTK_CELLS_PER_STAGE,  # 使用较浅的网络进行NTK评估
                 enable_dropout=False  # NTK 评估时禁用 Dropout
             )
             param_count = network.get_param_count()
@@ -308,7 +318,15 @@ class FinalEvaluator:
         logger.info(f"Training curve saved to {plot_path}")
         return plot_path
 
-    def evaluate_individual(self, individual: Individual, epochs: int = None) -> Tuple[float, dict]:
+    def evaluate_individual(self, individual: Individual, epochs: int = None, model_type: str = 'full') -> Tuple[float, dict]:
+        """
+        训练并评估个体
+        
+        Args:
+            individual: 待评估的个体
+            epochs: 训练轮数
+            model_type: 模型类型，'short' 表示短期训练，'full' 表示完整训练
+        """
         if epochs is None:
             epochs = config.FULL_TRAIN_EPOCHS
 
@@ -325,8 +343,11 @@ class FinalEvaluator:
         )
         train_time = time.time() - start_time
 
-        # 保存模型
-        save_dir = os.path.join(config.CHECKPOINT_DIR, 'final_models')
+        # 根据模型类型选择保存目录
+        if model_type == 'short':
+            save_dir = os.path.join(config.CHECKPOINT_DIR, 'short_train_models')
+        else:
+            save_dir = os.path.join(config.CHECKPOINT_DIR, 'full_train_models')
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, f'model_{individual.id}_acc{best_acc:.2f}.pth')
 

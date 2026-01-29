@@ -29,7 +29,7 @@ class Config:
     
     # ==================== 网络堆叠参数 ====================
     INIT_CHANNELS = 36               # 初始通道数 (论文默认 36)
-    CELLS_PER_STAGE = 8              # 每个 Stage 的 Normal Cell 数量
+    CELLS_PER_STAGE = 6              # 每个 Stage 的 Normal Cell 数量
     NUM_STAGES = 3                   # Stage 数量 (3 个 stage = 2 个 reduction)
     
     # ==================== 进化算法参数 ====================
@@ -59,6 +59,7 @@ class Config:
     NTK_INPUT_SIZE = (3, 32, 32)    
     NTK_NUM_CLASSES = 10            
     NTK_PARAM_THRESHOLD = 10000000   # 参数量阈值
+    NTK_CELLS_PER_STAGE = 2          # NTK评估时使用的每个Stage的Cell数 (减少深度以避免随机权重的梯度消失)
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
@@ -86,7 +87,7 @@ class Config:
     INPUT_IMAGE_SIZE = 32
     
     # ==================== 其他参数 ====================
-    RANDOM_SEED = 42                # 固定默认种子，可通过命令行参数覆盖
+    RANDOM_SEED = 1212312                # 固定默认种子，可通过命令行参数覆盖
     NUM_WORKERS = 8                 
 
     def get_search_space_summary(self) -> str:
