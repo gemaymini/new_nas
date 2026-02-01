@@ -27,7 +27,7 @@ class NTKEvaluator:
                  batch_size: int = None,
                  device: str = None,
                  recalbn: int = 0,
-                 num_batch: int = 5):
+                 num_batch: int = 1):
         self.input_size = input_size or config.NTK_INPUT_SIZE
         self.num_classes = num_classes or config.NTK_NUM_CLASSES
         self.batch_size = batch_size or config.NTK_BATCH_SIZE
@@ -182,7 +182,7 @@ class NTKEvaluator:
                 if hasattr(m, 'num_batches_tracked') and m.num_batches_tracked is not None:
                     m.num_batches_tracked.zero_()
 
-    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 5) -> float:
+    def compute_ntk_score(self, network: nn.Module, param_count: int = None, num_runs: int = 1) -> float:
         """
         Compute NTK score by averaging multiple runs (removing min/max if num_runs > 2).
         

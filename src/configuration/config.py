@@ -33,7 +33,7 @@ class Config:
     NUM_STAGES = 3                   # Stage 数量 (3 个 stage = 2 个 reduction)
     
     # ==================== 进化算法参数 ====================
-    POPULATION_SIZE = 200            # 种群大小 (Aging Evolution Queue Size)
+    POPULATION_SIZE = 100            # 种群大小 (Aging Evolution Queue Size)
     MAX_GEN = 2000                   # 最大进化代数
     TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
@@ -63,7 +63,7 @@ class Config:
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
-    BATCH_SIZE = 256
+    BATCH_SIZE = 64
     LEARNING_RATE = 0.025             
     MOMENTUM = 0.9                  
     WEIGHT_DECAY = 3e-4
