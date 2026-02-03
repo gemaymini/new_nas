@@ -83,76 +83,63 @@ class NTKEvaluator:
             float: The NTK condition number.
         """
         device = torch.cuda.current_device() if self.device == 'cuda' else 'cpu'
-        networks = [network]
         
-        for net in networks:
-            if train_mode:
-                net.train()
-            else:
-                net.eval()
+        if train_mode:
+            network.train()
+        else:
+            network.eval()
 
-        grads = [[] for _ in range(len(networks))]
+        grads = []
         for i, (inputs, targets) in enumerate(xloader):
             if num_batch > 0 and i >= num_batch:
                 break
             inputs = inputs.to(device=device, non_blocking=True)
-            for net_idx, net in enumerate(networks):
-                net.zero_grad()
-                inputs_ = inputs.clone().to(device=device, non_blocking=True)
-                logit = net(inputs_)
-                if isinstance(logit, tuple):
-                    logit = logit[1]
-                for _idx in range(len(inputs_)):
-                    logit[_idx:_idx+1].backward(torch.ones_like(logit[_idx:_idx+1]), retain_graph=True)
-                    grad = []
-                    for name, W in net.named_parameters():
-                        if 'weight' in name and W.grad is not None:
-                            grad.append(W.grad.view(-1).detach().clone())  # 添加 clone() 防止梯度被覆盖
-                    if grad:
-                        grads[net_idx].append(torch.cat(grad, -1))
-                    net.zero_grad()
-            # 将 empty_cache 移到 batch 外层，避免频繁调用影响性能
+            network.zero_grad()
+            inputs_ = inputs.clone().to(device=device, non_blocking=True)
+            logit = network(inputs_)
+            if isinstance(logit, tuple):
+                logit = logit[1]
+            for _idx in range(len(inputs_)):
+                logit[_idx:_idx+1].backward(torch.ones_like(logit[_idx:_idx+1]), retain_graph=True)
+                grad = []
+                for name, W in network.named_parameters():
+                    if 'weight' in name and W.grad is not None:
+                        grad.append(W.grad.view(-1).detach().clone())
+                if grad:
+                    grads.append(torch.cat(grad, -1))
+                network.zero_grad()
             torch.cuda.empty_cache()
 
         # 检查是否有有效的梯度
-        if len(grads[0]) == 0:
+        if len(grads) == 0:
             logger.warning("No valid gradients collected, returning penalty score.")
             return 100000.0
 
-        grads = [torch.stack(_grads, 0) for _grads in grads]
-        ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
-        conds = []
-        for ntk in ntks:
-            try:
-                
-                # Use robust eigenvalue calculation
-                eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
-                
-                # Enforce PSD (Positive Semi-Definite) property by clamping small/negative values to a small epsilon
-                # 1e-6 was too large for some networks with small gradients (e.g. ~1e-12), causing NTK=1.0
-                eigenvalues = torch.clamp(eigenvalues, min=1e-30)
-                
-                # Check for NaNs
-                if torch.isnan(eigenvalues).any():
-                     logger.warning("NaN detected in eigenvalues")
-                     conds.append(100000.0)
-                     continue
-                
-                # Check for Dead Network (Vanishing Gradients)
-                # If the maximum eigenvalue is extremely small, the network has no gradients.
-                # In this case, min~max~1e-30, resulting in cond=1.0, which is misleadingly "perfect".
-                if eigenvalues[-1].item() < 1e-8:
-                     logger.warning(f"Dead network detected (Max Eigenvalue < 1e-8: {eigenvalues[-1].item():.6e}). Penalizing.")
-                     conds.append(100000.0)
-                     continue
+        grads = torch.stack(grads, 0)
+        ntk = torch.einsum('nc,mc->nm', [grads, grads])
+        
+        try:
+            # Use robust eigenvalue calculation
+            eigenvalues = torch.linalg.eigvalsh(ntk, UPLO='U')  # ascending
+            
+            # Enforce PSD (Positive Semi-Definite) property
+            eigenvalues = torch.clamp(eigenvalues, min=1e-30)
+            
+            # Check for NaNs
+            if torch.isnan(eigenvalues).any():
+                logger.warning("NaN detected in eigenvalues")
+                return 100000.0
+            
+            # Check for Dead Network (Vanishing Gradients)
+            if eigenvalues[-1].item() < 1e-8:
+                logger.warning(f"Dead network detected (Max Eigenvalue < 1e-8: {eigenvalues[-1].item():.6e}). Penalizing.")
+                return 100000.0
 
-                condition_number = (eigenvalues[-1] / eigenvalues[0]).item()
-                conds.append(np.nan_to_num(condition_number, copy=True, nan=100000.0))
-            except Exception as e:
-                logger.warning(f"NTK eigenvalue computation failed: {e}")
-                conds.append(100000.0)
-                
-        return conds[0]
+            condition_number = (eigenvalues[-1] / eigenvalues[0]).item()
+            return np.nan_to_num(condition_number, copy=True, nan=100000.0)
+        except Exception as e:
+            logger.warning(f"NTK eigenvalue computation failed: {e}")
+            return 100000.0
 
     def _kaiming_init(self, network: nn.Module):
         """

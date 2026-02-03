@@ -34,8 +34,8 @@ class Config:
     
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE = 100            # 种群大小 (Aging Evolution Queue Size)
-    MAX_GEN = 2000                   # 最大进化代数
-    TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
+    MAX_GEN = 10000                   # 最大进化代数
+    TOURNAMENT_SIZE = 25              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
     
     # ==================== 筛选与训练流程参数 ====================
@@ -63,10 +63,10 @@ class Config:
     
     # ==================== 训练参数 ====================
     DEVICE = 'cuda'                 
-    BATCH_SIZE = 64
-    LEARNING_RATE = 0.025             
+    BATCH_SIZE = 128
+    LEARNING_RATE = 0.024             
     MOMENTUM = 0.9                  
-    WEIGHT_DECAY = 3e-4
+    WEIGHT_DECAY = 5e-4
     
     # ==================== 早停参数 ====================
     EARLY_STOPPING_PATIENCE = 75     # 早停耐心值：连续多少个 epoch 没有改进就停止
@@ -89,6 +89,11 @@ class Config:
     # ==================== 架构约束参数 ====================
     MIN_FEATURE_SIZE = 1            
     INPUT_IMAGE_SIZE = 32
+    
+    # ==================== 判重配置参数 ====================
+    ENABLE_DUPLICATE_CHECK = False         # 是否启用判重（已禁用，允许重复个体）
+    MAX_DUPLICATE_REPAIR_ATTEMPTS = 10     # 修复重复个体的最大尝试次数
+    MAX_INIT_DUPLICATE_ATTEMPTS = 100      # 初始化时避免重复的最大尝试次数
     
     # ==================== 其他参数 ====================
     RANDOM_SEED = random.randint(0, 2**32-1)

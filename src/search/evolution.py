@@ -14,7 +14,7 @@ from typing import List, Tuple, Optional
 from copy import deepcopy
 
 from configuration.config import config
-from core.encoding import Individual, Encoder
+from core.encoding import Individual, Encoder, DuplicateChecker
 from core.search_space import population_initializer, search_space
 from search.mutation import mutation_operator, selection_operator, crossover_operator
 from engine.evaluator import fitness_evaluator, FinalEvaluator
@@ -53,20 +53,22 @@ class AgingEvolutionNAS:
     def initialize_population(self):
         """
         Initialize the population with random individuals until queue is full.
+        使用判重确保初始种群中没有重复个体
         """
         logger.info("Initializing population...")
         
+        existing_population = list(self.population)
+        
         while len(self.population) < self.population_size:
-            ind = population_initializer.create_valid_individual()
-            if ind is None:
-                logger.warning("Failed to create individual, using fallback")
-                ind = search_space.sample_individual()
+            # 使用判重创建唯一个体
+            ind = population_initializer.create_unique_individual(existing_population)
             
             # Evaluate immediately
             ind.id = len(self.population)
             fitness_evaluator.evaluate_individual(ind)
             self.population.append(ind)
             self.history.append(ind)
+            existing_population.append(ind)  # 更新已有种群列表
             
             # 记录NTK值 (保存genotype而非encoding)
             step = 0  # 初始化阶段step=0
@@ -105,9 +107,53 @@ class AgingEvolutionNAS:
     def _generate_offspring(self, parent1: Individual, parent2: Individual) -> Individual:
         """
         Generate ONE offspring using Crossover and Mutation.
+        使用判重确保生成的后代不与种群重复
         """
-        child = None
         
+        # 如果禁用判重，直接生成并返回
+        if not config.ENABLE_DUPLICATE_CHECK:
+            child = self._create_child(parent1, parent2)
+            if not child.validate():
+                child = self._repair_individual(child, [parent1, parent2])
+            return child
+        
+        # 预先计算当前种群的编码集合（用于快速判重）
+        # 只计算一次，避免每次循环都重新计算
+        encoding_set = DuplicateChecker.get_encoding_set(list(self.population))
+        max_attempts = config.MAX_DUPLICATE_REPAIR_ATTEMPTS
+        
+        for attempt in range(max_attempts):
+            child = self._create_child(parent1, parent2)
+                
+            # Validate and Repair
+            if not child.validate():
+                child = self._repair_individual(child, [parent1, parent2])
+            
+            # 判重
+            if not DuplicateChecker.is_duplicate_fast(child, encoding_set):
+                if attempt > 0:
+                    logger.info(f"Generated unique offspring after {attempt + 1} attempts")
+                return child
+            
+            # 如果重复，记录并继续
+            if attempt < max_attempts - 1:
+                logger.debug(f"Duplicate offspring detected, retrying... (attempt {attempt + 1}/{max_attempts})")
+        
+        # 超过最大尝试次数，允许使用重复个体
+        logger.warning(f"Failed to generate unique offspring after {max_attempts} attempts, allowing duplicate")
+        return child
+    
+    def _create_child(self, parent1: Individual, parent2: Individual) -> Individual:
+        """
+        创建子代个体（执行交叉和变异操作）
+        
+        Args:
+            parent1: 父代1
+            parent2: 父代2
+        
+        Returns:
+            子代个体
+        """
         # Crossover
         if random.random() < config.PROB_CROSSOVER:
             child = crossover_operator.crossover(parent1, parent2)
@@ -117,11 +163,7 @@ class AgingEvolutionNAS:
         # Mutation
         if random.random() < config.PROB_MUTATION:
             child = mutation_operator.mutate(child)
-            
-        # Validate and Repair
-        if not child.validate():
-            child = self._repair_individual(child, [parent1, parent2])
-            
+        
         return child
 
     def _repair_individual(self, ind: Individual, parents: List[Individual]) -> Individual:

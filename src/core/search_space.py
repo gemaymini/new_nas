@@ -6,7 +6,7 @@ DARTS 搜索空间模块
 import random
 from typing import List, Optional
 from configuration.config import config
-from core.encoding import CellEncoding, Individual, Edge
+from core.encoding import CellEncoding, Individual, Edge, DuplicateChecker
 from utils.logger import logger
 
 
@@ -134,26 +134,44 @@ class PopulationInitializer:
         logger.error(f"Failed to create valid individual after {max_attempts} attempts")
         return None
     
-    def initialize_population(self, population_size: int) -> List[Individual]:
+    def create_unique_individual(self, existing_population: List[Individual], 
+                                max_attempts: int = None) -> Optional[Individual]:
         """
-        初始化种群
+        创建一个不与现有种群重复的个体
         
         Args:
-            population_size: 种群大小
+            existing_population: 现有种群列表
+            max_attempts: 最大尝试次数，默认使用配置值
         
         Returns:
-            个体列表
+            不重复的有效个体，如果超过最大尝试次数则返回重复的个体
         """
-        population = []
-        for _ in range(population_size):
-            individual = self.create_valid_individual()
-            if individual is not None:
-                population.append(individual)
-            else:
-                logger.warning("Failed to create individual, using fallback")
-                population.append(self.search_space.sample_individual())
         
-        return population
+        if max_attempts is None:
+            max_attempts = config.MAX_INIT_DUPLICATE_ATTEMPTS
+        
+        # 快速判重：预先计算编码集合
+        encoding_set = DuplicateChecker.get_encoding_set(existing_population)
+        
+        for attempt in range(max_attempts):
+            individual = self.create_valid_individual()
+            
+            if individual is None:
+                continue
+            
+            # 检查是否重复
+            if not DuplicateChecker.is_duplicate_fast(individual, encoding_set):
+                if attempt > 0:
+                    logger.info(f"Created unique individual after {attempt + 1} attempts")
+                return individual
+        
+        # 超过最大尝试次数，返回最后一个个体（可能重复）
+        logger.warning(
+            f"Failed to create unique individual after {max_attempts} attempts; "
+            "returning the last valid individual (may be duplicate)"
+        )
+        # 确保返回一个有效个体
+        return self.create_valid_individual()
 
 
 # Global instances

@@ -4,7 +4,6 @@ DARTS Cell 编码模块
 实现基于 DAG 的 Cell 编码策略
 """
 import random
-import copy
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 from configuration.config import config
@@ -245,6 +244,24 @@ class Individual:
         """验证个体有效性"""
         return self.normal_cell.validate() and self.reduction_cell.validate()
     
+    def __eq__(self, other: 'Individual') -> bool:
+        """判断两个个体是否相等（基于编码）"""
+
+        if not isinstance(other, Individual):
+            return False
+        return (self.normal_cell.to_list() == other.normal_cell.to_list() and 
+                self.reduction_cell.to_list() == other.reduction_cell.to_list())
+    
+    def __hash__(self) -> int:
+        """计算个体哈希值（用于去重）"""
+        return hash((tuple(self.normal_cell.to_list()), 
+                    tuple(self.reduction_cell.to_list())))
+    
+    def get_encoding_tuple(self) -> Tuple[tuple, tuple]:
+        """获取编码元组表示（用于判重）"""
+        return (tuple(self.normal_cell.to_list()), 
+                tuple(self.reduction_cell.to_list()))
+    
     def __repr__(self):
         return (f"Individual(id={self.id}, fitness={self.fitness}, "
                 f"params={self.param_count}, acc={self.accuracy})")
@@ -302,3 +319,58 @@ class Encoder:
             'reduce': cell_to_genotype(individual.reduction_cell),
             'reduce_concat': list(range(2, 2 + config.NUM_NODES))
         }
+
+
+class DuplicateChecker:
+    """
+    个体判重工具类
+    利用Individual的__hash__和__eq__方法实现高效判重
+    """
+    
+    @staticmethod
+    def is_duplicate(individual: Individual, population: List[Individual]) -> bool:
+        """
+        判断个体是否与种群中的个体重复
+        
+        Args:
+            individual: 待检查的个体
+            population: 种群列表
+        
+        Returns:
+            如果重复返回 True，否则返回 False
+        """
+        if not config.ENABLE_DUPLICATE_CHECK:
+            return False
+        
+        # 利用__eq__方法进行比较
+        return any(individual == ind for ind in population)
+    
+    @staticmethod
+    def get_encoding_set(population: List[Individual]) -> set:
+        """
+        获取种群的编码集合（用于快速判重）
+        
+        Args:
+            population: 种群列表
+        
+        Returns:
+            编码元组的集合
+        """
+        return {ind.get_encoding_tuple() for ind in population}
+    
+    @staticmethod
+    def is_duplicate_fast(individual: Individual, encoding_set: set) -> bool:
+        """
+        快速判重（使用预先计算的编码集合）
+        
+        Args:
+            individual: 待检查的个体
+            encoding_set: 编码元组集合（通过get_encoding_set获取）
+        
+        Returns:
+            如果重复返回 True，否则返回 False
+        """
+        if not config.ENABLE_DUPLICATE_CHECK:
+            return False
+        
+        return individual.get_encoding_tuple() in encoding_set

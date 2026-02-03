@@ -1,2 +1,2 @@
-1.模型去重
-2.在cifar100上测试
+2.使用droppath
+3.auxiliary softmax
