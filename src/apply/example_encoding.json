@@ -1,6 +1,6 @@
 {
-    "normal_cell": [1, 0, 1, 6, 0, 6, 0, 4, 1, 5, 2, 6, 2, 6, 1, 0],
-    "reduction_cell": [0, 6, 0, 4, 2, 5, 2, 4, 2, 1, 1, 1, 3, 2, 3, 1],
+   "normal_cell": [0, 2, 0, 2, 0, 2, 1, 2, 1, 2, 1, 1, 2, 4, 2, 1],
+    "reduction_cell": [0, 6, 1, 6, 1, 6, 1, 6, 0, 6, 2, 1, 2, 1, 3, 1],
     "_comment": "编码格式说明: 每个Cell由NUM_NODES个节点组成, 每个节点有EDGES_PER_NODE条边, 每条边由2个整数(source, op_id)表示",
     "_operations": [
         "0: zero (无连接)",

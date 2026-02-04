@@ -365,6 +365,7 @@ class FinalEvaluator:
             individual, num_classes=self.num_classes
         )
         param_count = network.get_param_count()
+        individual.param_count = param_count  # 更新为完整网络的参数量
         Encoder.print_architecture(individual)
 
         start_time = time.time()
