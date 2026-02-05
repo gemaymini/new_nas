@@ -335,6 +335,7 @@ class FinalEvaluator:
             individual, num_classes=self.num_classes
         )
         param_count = network.get_param_count()
+        individual.param_count = param_count
         Encoder.print_architecture(individual)
 
         start_time = time.time()
@@ -366,8 +367,11 @@ class FinalEvaluator:
         logger.info(f"Saved model to {save_path}")
         logger.info(f"Model {individual.id} Genotype: {genotype}")
         
-        # 生成并保存训练曲线图到 logs 目录
-        plot_dir = os.path.join(config.LOG_DIR, 'training_curves')
+        # 根据模型类型分开存储训练曲线图
+        if model_type == 'short':
+            plot_dir = os.path.join(config.LOG_DIR, 'training_curves', 'short_train')
+        else:
+            plot_dir = os.path.join(config.LOG_DIR, 'training_curves', 'full_train')
         try:
             plot_path = self.plot_training_history(
                 history=history,

@@ -3,7 +3,7 @@
 DARTS-based 神经网络架构搜索算法 - 配置文件
 包含所有超参数配置
 """
-
+import random
 
 
 class Config:
@@ -35,7 +35,7 @@ class Config:
     # ==================== 进化算法参数 ====================
     POPULATION_SIZE = 100            # 种群大小 (Aging Evolution Queue Size)
     MAX_GEN = 5000                   # 最大进化代数
-    TOURNAMENT_SIZE = 5              # 锦标赛选择的样本大小
+    TOURNAMENT_SIZE = 25              # 锦标赛选择的样本大小
     TOURNAMENT_WINNERS = 2           # 锦标赛选择的胜者数量
     
     # ==================== 筛选与训练流程参数 ====================
@@ -43,7 +43,7 @@ class Config:
     SHORT_TRAIN_EPOCHS = 30          # 第一轮筛选：短期训练轮数
     
     HISTORY_TOP_N2 = 5               # 第二轮筛选：基于验证集Acc选择Top N2
-    FULL_TRAIN_EPOCHS = 500          # 最终训练：完整训练轮数
+    FULL_TRAIN_EPOCHS = 600          # 最终训练：完整训练轮数
     
     # ==================== 交叉/变异参数 ====================
     PROB_CROSSOVER = 0.5             # 交叉概率
@@ -66,7 +66,11 @@ class Config:
     BATCH_SIZE = 256
     LEARNING_RATE = 0.1             
     MOMENTUM = 0.9                  
-    WEIGHT_DECAY = 5e-4             
+    WEIGHT_DECAY = 5e-4
+    
+    # ==================== 早停策略参数 ====================
+    EARLY_STOP_PATIENCE = 75        # 连续多少个epoch没有提升就停止
+    EARLY_STOP_MIN_DELTA = 0.01     # 最小提升阈值（准确率百分比）             
     
     # ==================== 最终评估参数 ====================
     FINAL_DATASET = 'cifar10'       
@@ -87,7 +91,7 @@ class Config:
     INPUT_IMAGE_SIZE = 32
     
     # ==================== 其他参数 ====================
-    RANDOM_SEED = 1212312                # 固定默认种子，可通过命令行参数覆盖
+    RANDOM_SEED = random.randint(0, 2**32-1)                # 固定默认种子，可通过命令行参数覆盖
     NUM_WORKERS = 8                 
 
     def get_search_space_summary(self) -> str:

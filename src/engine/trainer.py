@@ -81,11 +81,16 @@ class NetworkTrainer:
     def train_network(self, model: nn.Module, trainloader: DataLoader,
                      testloader: DataLoader, epochs: int = None,
                      lr: float = None, momentum: float = None,
-                     weight_decay: float = None) -> Tuple[float, List[dict]]:
+                     weight_decay: float = None,
+                     early_stop: bool = True) -> Tuple[float, List[dict]]:
         if epochs is None: epochs = config.FULL_TRAIN_EPOCHS
         if lr is None: lr = config.LEARNING_RATE
         if momentum is None: momentum = config.MOMENTUM
         if weight_decay is None: weight_decay = config.WEIGHT_DECAY
+        
+        # 早停策略参数
+        patience = config.EARLY_STOP_PATIENCE
+        min_delta = config.EARLY_STOP_MIN_DELTA
         
         # Clear cache before training
         if self.device == 'cuda':
@@ -100,6 +105,7 @@ class NetworkTrainer:
         history = []
         best_acc = 0.0
         best_model_wts = copy.deepcopy(model.state_dict())
+        epochs_without_improvement = 0  # 早停计数器
         
         try:
             for epoch in range(1, epochs + 1):
@@ -118,12 +124,24 @@ class NetworkTrainer:
                     'lr': optimizer.param_groups[0]['lr']
                 })
                 
-                if test_acc > best_acc:
+                # 检查是否有足够的提升
+                if test_acc > best_acc + min_delta:
                     best_acc = test_acc
                     best_model_wts = copy.deepcopy(model.state_dict())
+                    epochs_without_improvement = 0
+                else:
+                    epochs_without_improvement += 1
                 
                 print(f'  [Epoch {epoch}/{epochs}] Train Acc: {train_acc:.2f}% | '
-                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}%')
+                      f'Test Acc: {test_acc:.2f}% | Best: {best_acc:.2f}% | '
+                      f'No Improve: {epochs_without_improvement}/{patience}')
+                
+                # 早停检查
+                if early_stop and epochs_without_improvement >= patience:
+                    logger.info(f"Early stopping triggered at epoch {epoch}. "
+                               f"No improvement > {min_delta}% for {patience} epochs.")
+                    print(f'  *** Early stopping at epoch {epoch} ***')
+                    break
                       
         except RuntimeError as e:
             if 'out of memory' in str(e):
