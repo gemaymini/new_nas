@@ -59,12 +59,6 @@ class Logger:
         
     def error(self, msg):
         self.logger.error(msg)
-        
-    def log_architecture(self, ind_id, encoding, fitness=None, param_count=None, prefix=""):
-        """记录架构信息"""
-        msg = f"{prefix}ID: {ind_id}, Fitness: {fitness}, Params: {param_count}\n"
-        msg += f"Encoding: {encoding}"
-        self.info(msg)
 
     def log_generation(self, gen, best_fitness, avg_fitness, pop_size):
         """记录每代统计信息"""

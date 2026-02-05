@@ -76,28 +76,6 @@ class DARTSSearchSpace:
         normal_cell = self.sample_cell()
         reduction_cell = self.sample_cell()
         return Individual(normal_cell=normal_cell, reduction_cell=reduction_cell)
-    
-    def sample_operation(self) -> int:
-        """随机采样一个操作 ID"""
-        return random.randint(0, self.num_operations - 1)
-    
-    def sample_source(self, node_idx: int) -> int:
-        """随机采样一个有效来源"""
-        return random.choice(self.get_valid_sources(node_idx))
-    
-    def get_operation_name(self, op_id: int) -> str:
-        """获取操作名称"""
-        if 0 <= op_id < len(self.operations):
-            return self.operations[op_id]
-        return f"unknown_op_{op_id}"
-    
-    def get_operation_id(self, op_name: str) -> int:
-        """获取操作 ID"""
-        try:
-            return self.operations.index(op_name)
-        except ValueError:
-            return -1
-
 
 class PopulationInitializer:
     """

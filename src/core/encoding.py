@@ -257,16 +257,6 @@ class Encoder:
     """
     
     @staticmethod
-    def create_random_individual() -> Individual:
-        """创建随机个体"""
-        return Individual()
-    
-    @staticmethod
-    def validate_individual(individual: Individual) -> bool:
-        """验证个体"""
-        return individual.validate()
-    
-    @staticmethod
     def print_architecture(individual: Individual):
         """打印架构信息"""
         print(f"\n{'='*60}")
